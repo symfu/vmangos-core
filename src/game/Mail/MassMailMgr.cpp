@@ -38,6 +38,12 @@
 
 INSTANTIATE_SINGLETON_1(MassMailMgr);
 
+MassMailMgr::MassMail::MassMail(MailDraft* mailProto, MailSender sender)
+    : m_protoMail(mailProto), m_sender(sender)
+{
+    MANGOS_ASSERT(mailProto);
+}
+
 void MassMailMgr::AddMassMailTask(MailDraft* mailProto, MailSender const& sender, uint32 raceMask)
 {
     if (RACEMASK_ALL_PLAYABLE & ~raceMask)                  // have races not included in mask
@@ -52,10 +58,13 @@ void MassMailMgr::AddMassMailTask(MailDraft* mailProto, MailSender const& sender
 
 struct MassMailerQueryHandler
 {
-    void HandleQueryCallback(QueryResult* result, MailDraft* mailProto, MailSender sender)
+    void HandleQueryCallback(std::unique_ptr<QueryResult> result, MailDraft* mailProto, MailSender sender)
     {
         if (!result)
+        {
+            delete mailProto;
             return;
+        }
 
         MassMailMgr::ReceiversList& recievers = sMassMailMgr.AddMassMailTask(mailProto, sender);
 
@@ -63,10 +72,8 @@ struct MassMailerQueryHandler
         {
             Field* fields = result->Fetch();
             recievers.insert(fields[0].GetUInt32());
-
         }
         while (result->NextRow());
-        delete result;
     }
 } massMailerQueryHandler;
 

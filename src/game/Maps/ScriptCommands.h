@@ -81,7 +81,7 @@ enum eScriptCommand
                                                             // datalong3 = unique_limit
                                                             // datalong4 = unique_distance
                                                             // dataint = eSummonCreatureFlags
-                                                            // dataint2 = script_id
+                                                            // dataint2 = generic_script_id
                                                             // dataint3 = attack_target (see enum ScriptTarget)
                                                             // dataint4 = despawn_type (see enum TempSummonType)
                                                             // x/y/z/o = coordinates
@@ -110,6 +110,7 @@ enum eScriptCommand
                                                             // datalong2 = amount
     SCRIPT_COMMAND_DESPAWN_CREATURE         = 18,           // source = Creature
                                                             // datalong = despawn_delay
+                                                            // datalong2 = respawn_delay
     SCRIPT_COMMAND_SET_EQUIPMENT            = 19,           // source = Creature
                                                             // datalong = (bool) reset_default
                                                             // dataint = main-hand item_id
@@ -143,7 +144,7 @@ enum eScriptCommand
     SCRIPT_COMMAND_STAND_STATE              = 28,           // source = Unit
                                                             // datalong = stand_state (enum UnitStandStateType)
     SCRIPT_COMMAND_MODIFY_THREAT            = 29,           // source = Creature
-                                                            // datalong = eModifyThreatTargets
+                                                            // datalong = eModifyThreatTargets, ScriptTarget
                                                             // x = percent
     SCRIPT_COMMAND_SEND_TAXI_PATH           = 30,           // source = Player
                                                             // datalong = taxi_path_id
@@ -174,13 +175,12 @@ enum eScriptCommand
                                                             // datalong2 = data
                                                             // datalong3 = eSetInstData64Options
     SCRIPT_COMMAND_START_SCRIPT             = 39,           // source = Map
-                                                            // datalong1-4 = event_script id
+                                                            // datalong1-4 = generic_script_id
                                                             // dataint1-4 = chance (total cant be above 100)
     SCRIPT_COMMAND_REMOVE_ITEM              = 40,           // source = Player (from provided source or target)
                                                             // datalong = item_id
                                                             // datalong2 = amount
-    SCRIPT_COMMAND_REMOVE_OBJECT            = 41,           // source = GameObject
-                                                            // target = Unit
+    SCRIPT_COMMAND_REMOVE_OBJECT            = 41,           // source = GameObject or Creature
     SCRIPT_COMMAND_SET_MELEE_ATTACK         = 42,           // source = Creature
                                                             // datalong = (bool) 0 = off, 1 = on
     SCRIPT_COMMAND_SET_COMBAT_MOVEMENT      = 43,           // source = Creature
@@ -270,7 +270,7 @@ enum eScriptCommand
                                                             // datalong2 = (bool) always_replace
                                                             // datalong3 = param1
     SCRIPT_COMMAND_START_SCRIPT_FOR_ALL     = 68,           // source = WorldObject
-                                                            // datalong = script_id
+                                                            // datalong = generic_script_id
                                                             // datalong2 = eStartScriptForAllOptions
                                                             // datalong3 = object_entry
                                                             // datalong4 = search_radius
@@ -309,7 +309,7 @@ enum eScriptCommand
     SCRIPT_COMMAND_DESPAWN_GAMEOBJECT       = 81,           // source = GameObject (from datalong, provided source or target)
                                                             // datalong = db_guid
                                                             // datalong2 = despawn_delay
-    SCRIPT_COMMAND_LOAD_GAMEOBJECT          = 82,           // source = Map
+    SCRIPT_COMMAND_LOAD_GAMEOBJECT_SPAWN    = 82,           // source = Map
                                                             // datalong = db_guid
     SCRIPT_COMMAND_QUEST_CREDIT             = 83,           // source = Player (from provided source or target)
                                                             // target = WorldObject (from provided source or target)
@@ -322,6 +322,23 @@ enum eScriptCommand
     SCRIPT_COMMAND_SET_PVP                  = 86,           // source = Player
                                                             // datalong = (bool) 0 = off, 1 = on
     SCRIPT_COMMAND_RESET_DOOR_OR_BUTTON     = 87,           // source = GameObject
+    SCRIPT_COMMAND_SET_COMMAND_STATE        = 88,           // source = Creature
+                                                            // datalong = command_state (see enum CommandStates)
+    SCRIPT_COMMAND_PLAY_CUSTOM_ANIM         = 89,           // source = GameObject
+                                                            // datalong = anim_id
+    SCRIPT_COMMAND_START_SCRIPT_ON_GROUP    = 90,           // source = Unit
+                                                            // datalong1-4 = generic_script_id
+                                                            // dataint1-4 = chance (total cant be above 100)
+    SCRIPT_COMMAND_LOAD_CREATURE_SPAWN      = 91,           // source = Map
+                                                            // datalong = db_guid
+                                                            // datalong2 = (bool) with_group
+    SCRIPT_COMMAND_START_SCRIPT_ON_ZONE     = 92,           // source = Map
+                                                            // datalong = generic_script_id
+                                                            // datalong2 = zone_id
+                                                            // datalong3 = (bool) with_pets
+    SCRIPT_COMMAND_FOLLOW_ESCORT            = 93,           // source = Creature
+                                                            // target = Unit
+                                                            // datalong = (bool) doFollow
 
     SCRIPT_COMMAND_MAX,
 
@@ -387,14 +404,15 @@ enum CastFlags
 enum ePlaySoundFlags
 {
     SF_PLAYSOUND_ONLY_TO_TARGET     = 0x1,
-    SF_PLAYSOUND_DISTANCE_DEPENDENT = 0x2
+    SF_PLAYSOUND_DISTANCE_DEPENDENT = 0x2,
+    SF_PLAYSOUND_TO_ALL_IN_ZONE     = 0x4
 };
 
 // Possible datalong values for SCRIPT_COMMAND_MODIFY_THREAT
 enum eModifyThreatTargets
 {
-    // 0 to 5 from Target enum.
-    SO_MODIFYTHREAT_ALL_ATTACKERS   = 6
+    // 0 to 7 from Target enum.
+    SO_MODIFYTHREAT_ALL_ATTACKERS   = 8
 };
 
 // Possible datalong3 values for SCRIPT_COMMAND_TERMINATE_SCRIPT
@@ -498,11 +516,14 @@ enum eStartScriptForAllOptions
 
 enum eDataFlags
 {
-    SF_GENERAL_SWAP_INITIAL_TARGETS = 0x1,                  // Swaps the provided source and target, before buddy is checked.
-    SF_GENERAL_SWAP_FINAL_TARGETS   = 0x2,                  // Swaps the local source and target, after buddy is assigned.
-    SF_GENERAL_TARGET_SELF          = 0x4,                  // Replaces the provided target with the provided source.
-    SF_GENERAL_ABORT_ON_FAILURE     = 0x8                   // Terminates the script if the command fails.
+    SF_GENERAL_SWAP_INITIAL_TARGETS = 0x01,                 // Swaps the original source and target, before buddy is checked.
+    SF_GENERAL_SWAP_FINAL_TARGETS   = 0x02,                 // Swaps the final source and target, after buddy is assigned.
+    SF_GENERAL_TARGET_SELF          = 0x04,                 // Replaces the final target with the final source.
+    SF_GENERAL_ABORT_ON_FAILURE     = 0x08,                 // Terminates the whole script if the command fails.
+    SF_GENERAL_SKIP_MISSING_TARGETS = 0x10,                 // Command is skipped if source or target is not found, without printing an error.
 };
+
+#define ALL_DB_SCRIPT_FLAGS (SF_GENERAL_SWAP_INITIAL_TARGETS | SF_GENERAL_SWAP_FINAL_TARGETS | SF_GENERAL_TARGET_SELF | SF_GENERAL_ABORT_ON_FAILURE | SF_GENERAL_SKIP_MISSING_TARGETS)
 
 struct ScriptInfo
 {
@@ -637,6 +658,7 @@ struct ScriptInfo
         struct                                              // SCRIPT_COMMAND_DESPAWN_CREATURE (18)
         {
             uint32 despawnDelay;                            // datalong
+            uint32 respawnDelay;                            // datalong
         } despawn;
 
         struct                                              // SCRIPT_COMMAND_SET_EQUIPMENT (19)
@@ -753,7 +775,8 @@ struct ScriptInfo
             uint32 type;                                    // datalong3
         } setData64;
 
-        struct                                              // SCRIPT_COMMAND_START_SCRIPT (39)
+                                                            // SCRIPT_COMMAND_START_SCRIPT (39)
+        struct                                              // SCRIPT_COMMAND_START_SCRIPT_ON_GROUP (90)
         {
             uint32 scriptId[4];                             // datalong to datalong4
             uint32 unused;                                  // data_flags
@@ -1009,7 +1032,7 @@ struct ScriptInfo
             uint32 respawnDelay;                            // datalong2
         } despawnGo;
 
-        struct                                              // SCRIPT_COMMAND_LOAD_GAMEOBJECT (82)
+        struct                                              // SCRIPT_COMMAND_LOAD_GAMEOBJECT_SPAWN (82)
         {
             uint32 goGuid;                                  // datalong
         } loadGo;
@@ -1033,6 +1056,34 @@ struct ScriptInfo
         } setPvP;
 
                                                             // SCRIPT_COMMAND_RESET_DOOR_OR_BUTTON (87)
+
+        struct                                              // SCRIPT_COMMAND_SET_COMMAND_STATE (88)
+        {
+            uint32 commandState;                            // datalong
+        } setCommandState;
+
+        struct                                              // SCRIPT_COMMAND_PLAY_CUSTOM_ANIM (89)
+        {
+            uint32 animId;                                  // datalong
+        } playCustomAnim;
+
+        struct                                              // SCRIPT_COMMAND_LOAD_CREATURE_SPAWN (91)
+        {
+            uint32 dbGuid;                                  // datalong
+            uint32 withGroup;                               // datalong2
+        } loadCreature;
+
+        struct                                              // SCRIPT_COMMAND_START_SCRIPT_ON_ZONE (92)
+        {
+            uint32 scriptId;                                // datalong
+            uint32 zoneId;                                  // datalong2
+            uint32 withPets;                                // datalong3
+        } startScriptOnZone;
+
+        struct                                              // SCRIPT_COMMAND_FOLLOW_ESCORT (93)
+        {
+            uint32 doFollow;                                // datalong
+        } followEscort;
 
         struct
         {
@@ -1061,7 +1112,7 @@ struct ScriptInfo
         {
             case SCRIPT_COMMAND_RESPAWN_GAMEOBJECT: return respawnGo.goGuid;
             case SCRIPT_COMMAND_DESPAWN_GAMEOBJECT: return despawnGo.goGuid;
-            case SCRIPT_COMMAND_LOAD_GAMEOBJECT: return loadGo.goGuid;
+            case SCRIPT_COMMAND_LOAD_GAMEOBJECT_SPAWN: return loadGo.goGuid;
             case SCRIPT_COMMAND_OPEN_DOOR: return openDoor.goGuid;
             case SCRIPT_COMMAND_CLOSE_DOOR: return closeDoor.goGuid;
             default: return 0;
@@ -1097,65 +1148,69 @@ enum ScriptTarget
                                                             //Param1 = select_flags
     TARGET_T_HOSTILE_RANDOM_NOT_TOP         = 5,            //Any random target except top threat.
                                                             //Param1 = select_flags
+    TARGET_T_HOSTILE_NEAREST                = 6,            //Nearest hostile on threat list.
+                                                            //Param1 = select_flags
+    TARGET_T_HOSTILE_FARTHEST               = 7,            //Farthest hostile on threat list.
+                                                            //Param1 = select_flags
 
-    TARGET_T_OWNER_OR_SELF                  = 6,            //Either self or owner if pet or controlled.
-    TARGET_T_OWNER                          = 7,            //The owner of the source.
+    TARGET_T_OWNER_OR_SELF                  = 8,            //Either self or owner if pet or controlled.
+    TARGET_T_OWNER                          = 9,            //The owner of the source.
     
 
-    TARGET_T_NEAREST_CREATURE_WITH_ENTRY    = 8,            //Searches for closest nearby creature with the given entry.
+    TARGET_T_NEAREST_CREATURE_WITH_ENTRY    = 10,           //Searches for closest nearby creature with the given entry.
                                                             //Param1 = creature_entry
                                                             //Param2 = search_radius
 
-    TARGET_T_CREATURE_WITH_GUID             = 9,            //The creature with this database guid.
+    TARGET_T_CREATURE_WITH_GUID             = 11,           //The creature with this database guid.
                                                             //Param1 = db_guid
 
-    TARGET_T_CREATURE_FROM_INSTANCE_DATA    = 10,           //Find creature by guid stored in instance data.
+    TARGET_T_CREATURE_FROM_INSTANCE_DATA    = 12,           //Find creature by guid stored in instance data.
                                                             //Param1 = instance_data_field
 
-    TARGET_T_NEAREST_GAMEOBJECT_WITH_ENTRY  = 11,           //Searches for closest nearby gameobject with the given entry.
+    TARGET_T_NEAREST_GAMEOBJECT_WITH_ENTRY  = 13,           //Searches for closest nearby gameobject with the given entry.
                                                             //Param1 = gameobject_entry
                                                             //Param2 = search_radius
 
-    TARGET_T_GAMEOBJECT_WITH_GUID           = 12,           //The gameobject with this database guid.
+    TARGET_T_GAMEOBJECT_WITH_GUID           = 14,           //The gameobject with this database guid.
                                                             //Param1 = db_guid
 
-    TARGET_T_GAMEOBJECT_FROM_INSTANCE_DATA  = 13,           //Find gameobject by guid stored in instance data.
+    TARGET_T_GAMEOBJECT_FROM_INSTANCE_DATA  = 15,           //Find gameobject by guid stored in instance data.
                                                             //Param1 = instance_data_field
 
-    TARGET_T_FRIENDLY                       = 14,           //Random friendly unit.
+    TARGET_T_FRIENDLY                       = 16,           //Random friendly unit.
                                                             //Param1 = search_radius
                                                             //Param2 = (bool) exclude_target
-    TARGET_T_FRIENDLY_INJURED               = 15,           //Friendly unit missing the most health.
+    TARGET_T_FRIENDLY_INJURED               = 17,           //Friendly unit missing the most health.
                                                             //Param1 = search_radius
                                                             //Param2 = hp_percent
-    TARGET_T_FRIENDLY_INJURED_EXCEPT        = 16,           //Friendly unit missing the most health but not provided target.
+    TARGET_T_FRIENDLY_INJURED_EXCEPT        = 18,           //Friendly unit missing the most health but not provided target.
                                                             //Param1 = search_radius
                                                             //Param2 = hp_percent
-    TARGET_T_FRIENDLY_MISSING_BUFF          = 17,           //Friendly unit without aura.
+    TARGET_T_FRIENDLY_MISSING_BUFF          = 19,           //Friendly unit without aura.
                                                             //Param1 = search_radius
                                                             //Param2 = spell_id
-    TARGET_T_FRIENDLY_MISSING_BUFF_EXCEPT   = 18,           //Friendly unit without aura but not provided target.
+    TARGET_T_FRIENDLY_MISSING_BUFF_EXCEPT   = 20,           //Friendly unit without aura but not provided target.
                                                             //Param1 = search_radius
                                                             //Param2 = spell_id
-    TARGET_T_FRIENDLY_CC                    = 19,           //Friendly unit under crowd control.
+    TARGET_T_FRIENDLY_CC                    = 21,           //Friendly unit under crowd control.
                                                             //Param1 = search_radius
-    TARGET_T_MAP_EVENT_SOURCE               = 20,           //The source WorldObject of a scripted map event.
+    TARGET_T_MAP_EVENT_SOURCE               = 22,           //The source WorldObject of a scripted map event.
                                                             //Param1 = eventId
-    TARGET_T_MAP_EVENT_TARGET               = 21,           //The target WorldObject of a scripted map event.
+    TARGET_T_MAP_EVENT_TARGET               = 23,           //The target WorldObject of a scripted map event.
                                                             //Param1 = eventId
-    TARGET_T_MAP_EVENT_EXTRA_TARGET         = 22,           //An additional WorldObject target from a scripted map event.
+    TARGET_T_MAP_EVENT_EXTRA_TARGET         = 24,           //An additional WorldObject target from a scripted map event.
                                                             //Param1 = eventId
                                                             //Param2 = creature_entry or gameobject_entry
-    TARGET_T_NEAREST_PLAYER                 = 23,           //Nearest player within range.
+    TARGET_T_NEAREST_PLAYER                 = 25,           //Nearest player within range.
                                                             //Param1 = search-radius
-    TARGET_T_NEAREST_HOSTILE_PLAYER         = 24,           //Nearest hostile player within range.
+    TARGET_T_NEAREST_HOSTILE_PLAYER         = 26,           //Nearest hostile player within range.
                                                             //Param1 = search-radius
-    TARGET_T_NEAREST_FRIENDLY_PLAYER        = 25,           //Nearest friendly player within range.
+    TARGET_T_NEAREST_FRIENDLY_PLAYER        = 27,           //Nearest friendly player within range.
                                                             //Param1 = search-radius
-    TARGET_T_RANDOM_CREATURE_WITH_ENTRY     = 26,           //Searches for random nearby creature with the given entry. Not Self.
+    TARGET_T_RANDOM_CREATURE_WITH_ENTRY     = 28,           //Searches for random nearby creature with the given entry. Not Self.
                                                             //Param1 = creature_entry
                                                             //Param2 = search_radius
-    TARGET_T_RANDOM_GAMEOBJECT_WITH_ENTRY   = 27,           //Searches for random nearby gameobject with the given entry.
+    TARGET_T_RANDOM_GAMEOBJECT_WITH_ENTRY   = 29,           //Searches for random nearby gameobject with the given entry.
                                                             //Param1 = gameobject_entry
                                                             //Param2 = search_radius
     TARGET_T_END

@@ -23,7 +23,6 @@
     \ingroup mangosd
 */
 
-#include "WorldSocketMgr.h"
 #include "Common.h"
 #include "World.h"
 #include "WorldRunnable.h"
@@ -32,6 +31,7 @@
 #include "MapManager.h"
 #include "BattleGroundMgr.h"
 #include "Master.h"
+#include "TimePeriod.h"
 
 #include "Database/DatabaseEnv.h"
 
@@ -40,7 +40,7 @@
 
 #ifdef WIN32
 #include "ServiceWin32.h"
-extern int m_ServiceStatus;
+extern volatile int m_ServiceStatus;
 #endif
 
 // Heartbeat for the World
@@ -52,6 +52,9 @@ void WorldRunnable::operator()()
 
     Master::ArmAnticrash();
     uint32 anticrashRearmTimer = 0;
+
+    // Set the platform's timer period
+    const auto scoped_tp = set_time_period(std::chrono::milliseconds(1));
 
     // Aim for WORLD_SLEEP_CONST update times
     // If we update slower, update again immediately.
@@ -68,7 +71,7 @@ void WorldRunnable::operator()()
         auto diff = WorldTimer::getMSTimeDiff(prevTime, currTime);
 
         if (sWorld.getConfig(CONFIG_UINT32_PERFLOG_SLOW_WORLD_UPDATE) && diff > sWorld.getConfig(CONFIG_UINT32_PERFLOG_SLOW_WORLD_UPDATE))
-            sLog.out(LOG_PERFORMANCE, "Slow world update: %ums", diff);
+            sLog.Out(LOG_PERFORMANCE, LOG_LVL_MINIMAL, "Slow world update: %ums", diff);
 
         // ANTICRASH
         if (sWorld.GetAnticrashRearmTimer())
@@ -82,7 +85,7 @@ void WorldRunnable::operator()()
             {
                 anticrashRearmTimer = 0;
                 Master::ArmAnticrash();
-                sLog.outInfo("Anticrash rearmed");
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Anticrash rearmed");
             }
             else
                 anticrashRearmTimer -= diff;
@@ -111,16 +114,13 @@ void WorldRunnable::operator()()
         #endif
     }
 
-    sLog.outString("Shutting down world...");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Shutting down world...");
     sWorld.Shutdown();
 
     // unload battleground templates before different singletons destroyed
     sBattleGroundMgr.DeleteAllBattleGrounds();
 
-    sLog.outString("Stopping network threads...");
-    sWorldSocketMgr->StopNetwork();
-
-    sLog.outString("Unloading all maps...");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Unloading all maps...");
     sMapMgr.UnloadAll();                                    // unload all grids (including locked in memory)
 
     // End the database thread

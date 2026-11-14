@@ -205,7 +205,7 @@ struct boss_buruAI : public ScriptedAI
             return;
         }
 
-        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_SPAWNING);
 
         if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
@@ -254,7 +254,7 @@ struct boss_buruAI : public ScriptedAI
                 ThreatList const& tList = m_creature->GetThreatManager().getThreatList();
                 for (const auto itr : tList)
                 {
-                    Player* pPlayer = m_creature->GetMap()->GetPlayer(itr->getUnitGuid());
+                    Player* pPlayer = itr->getTarget()->ToPlayer();
                     if (pPlayer && pPlayer->IsAlive())
                     {
                         GUIDs[var] = itr->getUnitGuid();

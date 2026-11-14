@@ -27,8 +27,9 @@
 #include "Database/DatabaseEnv.h"
 #include "World.h"
 #include "ObjectMgr.h"
+#include "MapManager.h"
 
-Corpse::Corpse(CorpseType type) : WorldObject(), loot(nullptr), lootRecipient(nullptr), m_faction(nullptr)
+Corpse::Corpse(CorpseType type) : WorldObject(), loot(this), lootRecipient(nullptr), m_faction(nullptr)
 {
     m_objectType |= TYPEMASK_CORPSE;
     m_objectTypeId = TYPEID_CORPSE;
@@ -54,7 +55,7 @@ Corpse::~Corpse()
 
 void Corpse::AddToWorld()
 {
-    ///- Register the corpse for guid lookup
+    // Register the corpse for guid lookup
     if (!IsInWorld())
         sObjectAccessor.AddObject(this);
 
@@ -63,7 +64,7 @@ void Corpse::AddToWorld()
 
 void Corpse::RemoveFromWorld()
 {
-    ///- Remove the corpse from the accessor
+    // Remove the corpse from the accessor
     if (IsInWorld())
         sObjectAccessor.RemoveObject(this);
 
@@ -90,7 +91,7 @@ bool Corpse::Create(uint32 guidlow, Player* owner)
 
     if (!IsPositionValid())
     {
-        sLog.outError("Corpse (guidlow %d, owner %s) not created. Suggested coordinates isn't valid (X: %f Y: %f)",
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Corpse (guidlow %d, owner %s) not created. Suggested coordinates isn't valid (X: %f Y: %f)",
                       guidlow, owner->GetName(), owner->GetPositionX(), owner->GetPositionY());
         return false;
     }
@@ -134,7 +135,7 @@ void Corpse::DeleteBonesFromWorld()
 
     if (!corpse)
     {
-        sLog.outError("Bones %u not found in world.", GetGUIDLow());
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Bones %u not found in world.", GetGUIDLow());
         return;
     }
 
@@ -155,8 +156,8 @@ void Corpse::DeleteFromDB()
 
 bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
 {
-    ////                                                    0            1            2                  3                  4                  5                   6
-    //QueryResult* result = CharacterDatabase.Query("SELECT corpse.guid, player_guid, corpse.position_x, corpse.position_y, corpse.position_z, corpse.orientation, corpse.map,"
+    ////                                                                    0            1            2                  3                  4                  5                   6
+    //std::unique_ptr<QueryResult> result = CharacterDatabase.Query("SELECT corpse.guid, player_guid, corpse.position_x, corpse.position_y, corpse.position_z, corpse.orientation, corpse.map,"
     ////   7     8            9         10      11    12     13     14   15          16          17           18               19        20
     //    "time, corpse_type, instance, gender, race, class, skin, face, hair_style, hair_color, facial_hair, equipment_cache, guild_id, player_flags FROM corpse"
     uint32 playerLowGuid = fields[1].GetUInt32();
@@ -173,7 +174,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
 
     if (m_type >= MAX_CORPSE_TYPE)
     {
-        sLog.outError("%s Owner %s have wrong corpse type (%i), not load.", GetGuidStr().c_str(), GetOwnerGuid().GetString().c_str(), m_type);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "%s Owner %s have wrong corpse type (%i), not load.", GetGuidStr().c_str(), GetOwnerGuid().GetString().c_str(), m_type);
         return false;
     }
 
@@ -189,7 +190,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
     uint8 facialhair = fields[17].GetUInt8();
 
     uint32 guildId      = fields[19].GetUInt32();
-    uint32 playerFlags  = fields[20].GetUInt32();
+    uint32 charFlags    = fields[20].GetUInt32();
 
     ObjectGuid guid = ObjectGuid(HIGHGUID_CORPSE, lowguid);
     ObjectGuid playerGuid = ObjectGuid(HIGHGUID_PLAYER, playerLowGuid);
@@ -203,7 +204,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
     PlayerInfo const* info = sObjectMgr.GetPlayerInfo(race, _class);
     if (!info)
     {
-        sLog.outError("Player %u has incorrect race/class pair.", GetGUIDLow());
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player %u has incorrect race/class pair.", GetGUIDLow());
         return false;
     }
     SetUInt32Value(CORPSE_FIELD_DISPLAY_ID, gender == GENDER_FEMALE ? info->displayId_f : info->displayId_m);
@@ -214,7 +215,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
     {
         uint32 visualbase = slot * 2;
         uint32 item_id = GetUInt32ValueFromArray(data, visualbase);
-        ItemPrototype const* proto = ObjectMgr::GetItemPrototype(item_id);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(item_id);
         if (!proto)
         {
             SetUInt32Value(CORPSE_FIELD_ITEM + slot, 0);
@@ -229,16 +230,18 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
 
     SetUInt32Value(CORPSE_FIELD_GUILD, guildId);
 
-    uint32 flags = CORPSE_FLAG_UNK2;
-    if (playerFlags & PLAYER_FLAGS_HIDE_HELM)
+    uint32 flags = 0;
+    if (charFlags & CHARACTER_FLAG_PVP_ENABLED)
+        flags |= CORPSE_FLAG_PVP;
+    if (charFlags & CHARACTER_FLAG_HIDE_HELM)
         flags |= CORPSE_FLAG_HIDE_HELM;
-    if (playerFlags & PLAYER_FLAGS_HIDE_CLOAK)
+    if (charFlags & CHARACTER_FLAG_HIDE_CLOAK)
         flags |= CORPSE_FLAG_HIDE_CLOAK;
     SetUInt32Value(CORPSE_FIELD_FLAGS, flags);
 
     // no need to mark corpse as lootable, because corpses are not saved in battle grounds
 
-    if (mapid <= 1)
+    if (mapid <= MAX_CONTINENT_ID)
         instanceid = sMapMgr.GetContinentInstanceId(mapid, positionX, positionY);
     SetLocationInstanceId(instanceid);
     SetLocationMapId(mapid);
@@ -246,7 +249,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
 
     if (!IsPositionValid())
     {
-        sLog.outError("%s Owner %s not created. Suggested coordinates isn't valid (X: %f Y: %f)",
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "%s Owner %s not created. Suggested coordinates isn't valid (X: %f Y: %f)",
                       GetGuidStr().c_str(), GetOwnerGuid().GetString().c_str(), GetPositionX(), GetPositionY());
         return false;
     }
@@ -291,7 +294,7 @@ bool Corpse::IsExpired(time_t t) const
         return m_time < t - 3 * DAY;
 }
 
-uint32 Corpse::GetFactionTemplateId() const 
+uint32 Corpse::GetFactionTemplateId() const
 {
     return m_faction->ID;
 }

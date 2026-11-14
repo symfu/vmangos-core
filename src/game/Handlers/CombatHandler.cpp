@@ -27,47 +27,48 @@
 #include "CreatureAI.h"
 #include "ObjectGuid.h"
 #include "Player.h"
+#include "Map.h"
 
-void WorldSession::HandleAttackSwingOpcode(WorldPacket& recv_data)
+void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing const& packet)
 {
-    ObjectGuid guid;
-    recv_data >> guid;
-
-    DEBUG_FILTER_LOG(LOG_FILTER_COMBAT, "WORLD: Recvd CMSG_ATTACKSWING Message %s", guid.GetString().c_str());
-
-    if (!guid.IsUnit())
-        return;
-
-    Unit* pEnemy = _player->GetMap()->GetUnit(guid);
-
-    if (!pEnemy)
+    if (!packet.targetGuid.IsUnit())
     {
         // stop attack state at client
-        SendAttackStop(nullptr);
+        SendPacket(GetPlayer()->BuildMeleeAttackStopPacket(packet.targetGuid));
         return;
     }
 
-    if (_player->IsFriendlyTo(pEnemy) || pEnemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE))
+    Unit* pEnemy = GetPlayer()->GetMap()->GetUnit(packet.targetGuid);
+    if (!pEnemy || !GetPlayer()->IsValidAttackTarget(pEnemy))
     {
         // stop attack state at client
-        SendAttackStop(pEnemy);
+        SendPacket(GetPlayer()->BuildMeleeAttackStopPacket(packet.targetGuid));
         return;
     }
 
-    if (!pEnemy->IsAlive())
+    if (GetPlayer()->Attack(pEnemy, true))
     {
-        // client can generate swing to known dead target if autoswitch between autoshot and autohit is enabled in client options
-        // stop attack state at client
-        SendAttackStop(pEnemy);
-        return;
+        // each new attack shows its swing error again, even the one last sent
+        GetPlayer()->SetSwingErrorMsg(ATTACK_RESULT_OK);
     }
-
-    _player->Attack(pEnemy, true);
+    else if (!GetPlayer()->GetVictim())
+    {
+        // stop attack state at client
+        SendPacket(GetPlayer()->BuildMeleeAttackStopPacket(packet.targetGuid));
+    }
 }
 
-void WorldSession::HandleAttackStopOpcode(WorldPacket& /*recv_data*/)
+void WorldSession::HandleAttackStopOpcode(NullClientPacket const& /*packet*/)
 {
-    GetPlayer()->AttackStop();
+    // reject packet if we don't have control
+    if (GetPlayer()->IsCharmed())
+        return;
+
+    // client maintains the auto attack animation until it receives
+    // a SMSG_ATTACKSTOP with its own player guid as the attacker, 
+    // so send the packet even if we have no victim as confirmation
+    if (!GetPlayer()->AttackStop())
+        SendPacket(GetPlayer()->BuildMeleeAttackStopPacket());
 
     /*
     I wanted to take a moment to provide some clarification around what changed in 1.13.3 with Reckoning.
@@ -81,32 +82,12 @@ void WorldSession::HandleAttackStopOpcode(WorldPacket& /*recv_data*/)
     GetPlayer()->ResetExtraAttacks();
 }
 
-void WorldSession::HandleSetSheathedOpcode(WorldPacket& recv_data)
+void WorldSession::HandleSetSheathedOpcode(WorldPackets::Combat::SetSheathed const& packet)
 {
-    uint32 sheathed;
-    recv_data >> sheathed;
-
-    //DEBUG_LOG("WORLD: Recvd CMSG_SETSHEATHED Message guidlow:%u value1:%u", GetPlayer()->GetGUIDLow(), sheathed);
-
-    if (sheathed >= MAX_SHEATH_STATE)
+    if (packet.sheathed >= MAX_SHEATH_STATE)
         return;
 
     GetPlayer()->InterruptSpellsWithChannelFlags(AURA_INTERRUPT_SHEATHING_CANCELS);
     GetPlayer()->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_SHEATHING_CANCELS);
-    GetPlayer()->SetSheath(SheathState(sheathed));
-}
-
-void WorldSession::SendAttackStop(Unit const* enemy)
-{
-#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_8_4
-    WorldPacket data(SMSG_ATTACKSTOP, (4 + 20));            // we guess size
-    data << GetPlayer()->GetPackGUID();
-    data << (enemy ? enemy->GetPackGUID() : PackedGuid());  // must be packed guid
-#else
-    WorldPacket data(SMSG_ATTACKSTOP);
-    data << GetPlayer()->GetGUID();
-    data << (enemy ? enemy->GetGUID() : uint64());
-#endif
-    data << uint32(0);                                      // unk, can be 1 also
-    SendPacket(&data);
+    GetPlayer()->SetSheath(SheathState(packet.sheathed));
 }

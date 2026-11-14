@@ -200,6 +200,7 @@ struct instance_scholomance : public ScriptedInstance
             case TYPE_MALICIA:
             case TYPE_ILLUCIABAROV:
             case TYPE_VIEWING_ROOM_DOOR:
+            case TYPE_DARKREAVER:
                 m_auiEncounter[uiType] = uiData;
                 break;
             default:
@@ -302,7 +303,7 @@ void AddSC_instance_scholomance()
 
     newscript = new Script;
     newscript->Name = "go_brazier_herald";
-    newscript->GOOpen = &GOOpen_brazier_herald;
+    newscript->pGOOpen = &GOOpen_brazier_herald;
     newscript->RegisterSelf();
 
     newscript = new Script;

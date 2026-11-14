@@ -3,16 +3,16 @@
 
 #include "Common.h"
 #include "ObjectGuid.h"
-#include "DBCEnums.h"
+#include "SpellDefines.h"
 
 // pet_spell_cooldown
-struct PetSpellCoodown
+struct PetSpellCooldown
 {
     uint32 spell = 0;
-    uint64 time = 0;
+    TimePoint whenReadyAgainTime{};
 };
 
-typedef std::vector<PetSpellCoodown> PetSpellCDs;
+typedef std::vector<PetSpellCooldown> PetSpellCDs;
 
 // pet_spell
 struct PetSpellCache
@@ -58,7 +58,7 @@ struct CharacterPetCache
     uint32 createdBySpell = 0;
     uint32 petType = 0;
     int32 trainingPoints = 0;
-    int32 loyaltyPoints = 0;;
+    int32 loyaltyPoints = 0;
     uint32 ownerGuid = 0;
     uint64 saveTime = 0;
     uint8 reactState = 0;

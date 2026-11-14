@@ -30,7 +30,7 @@ INSTANTIATE_SINGLETON_1(InstanceStatisticsMgr);
 void InstanceStatisticsMgr::LoadFromDB()
 {
     m_instanceWipes.clear();
-    sLog.outString("> Loading table `instance_wipes`");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "> Loading table `instance_wipes`");
     uint32 count = 0;
     std::unique_ptr<QueryResult> result(LogsDatabase.Query("SELECT `mapId`, `creatureEntry`, `count` FROM `instance_wipes`"));
     if (!result)
@@ -38,12 +38,12 @@ void InstanceStatisticsMgr::LoadFromDB()
         BarGoLink bar(1);
         bar.step();
 
-        sLog.outString();
-        sLog.outString(">> Table instance_wipes is empty.");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Table instance_wipes is empty.");
     }
     else
     {
-        BarGoLink bar((int)result->GetRowCount());
+        BarGoLink bar(result->GetRowCount());
         do
         {
             bar.step();
@@ -57,26 +57,26 @@ void InstanceStatisticsMgr::LoadFromDB()
             ++count;
         } while (result->NextRow());
 
-        sLog.outString();
-        sLog.outString(">> Loaded %u entries from `instance_wipes`", count);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u entries from `instance_wipes`", count);
     }
 
 
     m_instanceCreatureKills.clear();
-    sLog.outString("> Loading table `instance_creature_kills`");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "> Loading table `instance_creature_kills`");
     count = 0;
-    result.reset(LogsDatabase.Query("SELECT `mapId`, `creatureEntry`, `spellEntry`, `count` FROM `instance_creature_kills`"));
+    result = LogsDatabase.Query("SELECT `mapId`, `creatureEntry`, `spellEntry`, `count` FROM `instance_creature_kills`");
     if (!result)
     {
         BarGoLink bar(1);
         bar.step();
 
-        sLog.outString();
-        sLog.outString(">> Table instance_creature_kills is empty.");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Table instance_creature_kills is empty.");
     }
     else
     {
-        BarGoLink bar((int)result->GetRowCount());
+        BarGoLink bar(result->GetRowCount());
         do
         {
             bar.step();
@@ -102,27 +102,27 @@ void InstanceStatisticsMgr::LoadFromDB()
             ++count;
         } while (result->NextRow());
 
-        sLog.outString();
-        sLog.outString(">> Loaded %u entries from `instance_creature_kills`", count);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u entries from `instance_creature_kills`", count);
     }
 
 
 
     m_instanceCustomCounters.clear();
-    sLog.outString("> Loading table `instance_custom_counters`");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "> Loading table `instance_custom_counters`");
     count = 0;
-    result.reset(LogsDatabase.Query("SELECT `index`, `count` FROM `instance_custom_counters`"));
+    result = LogsDatabase.Query("SELECT `index`, `count` FROM `instance_custom_counters`");
     if (!result)
     {
         BarGoLink bar(1);
         bar.step();
 
-        sLog.outString();
-        sLog.outString(">> Table `instance_custom_counters` is empty.");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Table `instance_custom_counters` is empty.");
     }
     else
     {
-        BarGoLink bar((int)result->GetRowCount());
+        BarGoLink bar(result->GetRowCount());
         do
         {
             bar.step();
@@ -130,13 +130,13 @@ void InstanceStatisticsMgr::LoadFromDB()
             Field* fields = result->Fetch();
 
             uint32 index = fields[0].GetUInt32();
-            uint32 count = fields[1].GetUInt32();
-            m_instanceCustomCounters[index] = count;
+            uint32 customcount = fields[1].GetUInt32();
+            m_instanceCustomCounters[index] = customcount;
             ++count;
         } while (result->NextRow());
 
-        sLog.outString();
-        sLog.outString(">> Loaded %u entries from `instance_custom_counters`", count);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u entries from `instance_custom_counters`", count);
     }
 }
 

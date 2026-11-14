@@ -136,10 +136,10 @@ enum UpdateFieldFlags : uint16
 struct UpdateFieldData
 {
     UpdateFieldData() = default;
-    UpdateFieldData(uint8 objectTypeMask_, const char* name_, uint16 offset_, uint16 size_, UpdateFieldValueTypes valueType_, uint16 flags_) :
+    UpdateFieldData(uint8 objectTypeMask_, char const* name_, uint16 offset_, uint16 size_, UpdateFieldValueTypes valueType_, uint16 flags_) :
         objectTypeMask(objectTypeMask_), name(name_), offset(offset_), size(size_), valueType(valueType_), flags(flags_) {}
     uint8 objectTypeMask = 0;
-    const char* name = "";
+    char const* name = "";
     uint16 offset = 0;
     uint16 size = 0;
     UpdateFieldValueTypes valueType = UF_TYPE_NONE;
@@ -149,6 +149,8 @@ struct UpdateFieldData
 namespace UpdateFields
 {
     uint16 const* GetUpdateFieldFlagsArray(uint8 objectTypeId);
+    // True at every index that is the low half of a guid (pair of uint32); guid arrays are marked pairwise.
+    bool const* GetGuidFieldStartArray(uint8 objectTypeId);
     UpdateFieldData const* GetUpdateFieldDataByName(char const* name);
     UpdateFieldData const* GetUpdateFieldDataByTypeMaskAndOffset(uint8 objectTypeMask, uint16 offset);
 };

@@ -195,11 +195,10 @@ bool QuestAccept_npc_gilthares(Player* pPlayer, Creature* pCreature, Quest const
 enum
 {
     SAY_BIG_WILL_READY = 2421, 
-    SAY_TWIGGY_BEGIN   = 2310,  
+    SAY_TWIGGY_BEGIN   = 2301,  
     SAY_TWIGGY_FRAY    = 2318,  
     SAY_TWIGGY_DOWN    = 2355,  
     SAY_TWIGGY_OVER    = 2320,  
-    SAY_QUEST_TURN_IN  = 2354, // TODO: implement Klannoc Macleod (id: 6236) yells after quest was turned in: Hail $n!  New Champion of The Affray!
 
     NPC_TWIGGY = 6248,
     NPC_BIG_WILL = 6238,
@@ -267,7 +266,7 @@ struct npc_twiggy_flatheadAI : public ScriptedAI
             return true;
         }
 
-        sLog.outDebug("npc_twiggy_flathead event already in progress, need to wait.");
+        sLog.Out(LOG_SCRIPTS, LOG_LVL_DEBUG, "npc_twiggy_flathead event already in progress, need to wait.");
         return false;
     }
 
@@ -278,12 +277,12 @@ struct npc_twiggy_flatheadAI : public ScriptedAI
             Creature* pCreature = m_creature->SummonCreature(NPC_AFFRAY_CHALLENGER, AffrayChallengerLoc[i][0], AffrayChallengerLoc[i][1], AffrayChallengerLoc[i][2], AffrayChallengerLoc[i][3], TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 600000);
             if (!pCreature)
             {
-                sLog.outDebug("npc_twiggy_flathead event cannot summon challenger as expected.");
+                sLog.Out(LOG_SCRIPTS, LOG_LVL_DEBUG, "npc_twiggy_flathead event cannot summon challenger as expected.");
                 continue;
             }
 
             pCreature->SetFactionTemplateId(FACTION_FRIENDLY);
-            pCreature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+            pCreature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
             pCreature->HandleEmoteCommand(EMOTE_ONESHOT_ROAR);
             AffrayChallenger[i] = pCreature->GetGUID();
         }
@@ -292,7 +291,7 @@ struct npc_twiggy_flatheadAI : public ScriptedAI
     void SetChallengerReady(Unit *pUnit)
     {
         pUnit->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-        pUnit->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+        pUnit->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
         pUnit->HandleEmoteCommand(EMOTE_ONESHOT_ROAR);
         pUnit->SetFactionTemplateId(FACTION_MONSTER);
     }
@@ -523,7 +522,10 @@ struct npc_wizzlecranks_shredderAI : public npc_escortAI
     void JustSummoned(Creature* pSummoned) override
     {
         if (pSummoned->GetEntry() == NPC_PILOT_WIZZ)
+        {
             m_creature->SetStandState(UNIT_STAND_STATE_DEAD);
+            m_creature->RestoreFaction();
+        }
 
         if (pSummoned->GetEntry() == NPC_MERCENARY)
             pSummoned->AI()->AttackStart(m_creature);
@@ -647,7 +649,8 @@ struct npc_mission_possible_but_not_probableAI : ScriptedAI
                 return;
         }
 
-        DoCastSpellIfCan(m_creature, spellId);
+        if (spellId)
+            DoCastSpellIfCan(m_creature, spellId);
     }
 };
 

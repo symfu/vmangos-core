@@ -70,6 +70,7 @@ struct npc_kerlonianAI : public FollowerAI
     void Reset() override
     {
         m_uiFallAsleepTimer = urand(10000, 45000);
+        m_creature->EnableMoveInLosEvent();
     }
 
     void JustRespawned() override
@@ -139,6 +140,7 @@ struct npc_kerlonianAI : public FollowerAI
         }
 
         m_creature->SetStandState(UNIT_STAND_STATE_SLEEP);
+        m_creature->SetFactionTemplateId(35);
         m_creature->CastSpell(m_creature, SPELL_SLEEP_VISUAL, false);
     }
 
@@ -146,9 +148,9 @@ struct npc_kerlonianAI : public FollowerAI
     {
         m_creature->RemoveAurasDueToSpell(SPELL_SLEEP_VISUAL);
         m_creature->SetStandState(UNIT_STAND_STATE_STAND);
-
+        m_creature->SetFactionTemplateId(FACTION_ESCORT_A_NEUTRAL_PASSIVE);
+        m_creature->EnableMoveInLosEvent();
         DoScriptText(EMOTE_KER_AWAKEN, m_creature);
-
         SetFollowPaused(false);
     }
 
@@ -191,7 +193,7 @@ bool QuestAccept_npc_kerlonian(Player* pPlayer, Creature* pCreature, Quest const
             pCreature->SetStandState(UNIT_STAND_STATE_STAND);
             pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
             DoScriptText(SAY_KER_START, pCreature, pPlayer);
-            pKerlonianAI->StartFollow(pPlayer, FACTION_ESCORT_N_FRIEND_PASSIVE, pQuest);
+            pKerlonianAI->StartFollow(pPlayer, FACTION_ESCORT_A_NEUTRAL_PASSIVE, pQuest);
         }
     }
 
@@ -358,7 +360,10 @@ struct npc_threshwackonatorAI : public FollowerAI
         Reset();
     }
 
-    void Reset() override {}
+    void Reset() override
+    {
+        m_creature->EnableMoveInLosEvent();
+    }
 
     void MoveInLineOfSight(Unit* pWho) override
     {
@@ -556,6 +561,7 @@ struct npc_volcorAI : public npc_escortAI
             StealthDialogueStep = 0;
             StealthDialogueTimer = 0;
         }
+        m_creature->EnableMoveInLosEvent();
     }
 
     uint16 StealthDialogueStep;
@@ -853,8 +859,7 @@ struct npc_rabid_thistle_bearAI : public FollowerAI
 
     void StartFollowing(Player* pPlayer)
     {
-        Captured_Timer = 180000;
-        //Captured_Timer = 10000;
+        Captured_Timer = 500000;
         StartFollow(pPlayer);
     }
 
@@ -888,132 +893,6 @@ bool EffectDummyCreature_npc_rabid_thistle_bear(WorldObject* pCaster, uint32 uiS
             //always return true when we are handling this spell and effect
             return true;
         }
-    }
-    return false;
-}
-
-/*####
-# npc_tharnariun_treetender
-####*/
-
-enum TharnariunTreetenderData
-{
-    SAY_THARNARIUN_CLEANSED = 5937,
-    QUEST_PLAGUED_LANDS     = 2118,
-    SPELL_THARNARIUN_HEAL   = 9457
-};
-
-struct npc_tharnariun_treetenderAI : public ScriptedAI
-{
-    npc_tharnariun_treetenderAI(Creature *c) : ScriptedAI(c)
-    {
-        Reset();
-    }
-
-    bool m_bPlaguedLandsEvent;
-    uint32 m_uiPlaguedLandsTimer;
-    uint8 PlaguedLandsCount;
-    Player* pPlaguedLandsPlayer = nullptr;
-    Creature* pPlaguedLandsBear = nullptr;
-
-    void Reset() override
-    {
-        m_bPlaguedLandsEvent = false;
-        PlaguedLandsCount = 0;
-        pPlaguedLandsPlayer = nullptr;
-        pPlaguedLandsBear = nullptr;
-    }
-
-    void StartPlaguedLandsEvent(Player* pPlayer)
-    {
-        pPlaguedLandsPlayer = pPlayer;
-        m_bPlaguedLandsEvent = true;
-        PlaguedLandsCount = 1;
-        m_uiPlaguedLandsTimer = 1100;
-    }
-
-    void UpdateAI(uint32 const diff) override
-    {
-        if (m_bPlaguedLandsEvent)
-        { 
-            if (m_uiPlaguedLandsTimer < diff)
-            {
-                switch (PlaguedLandsCount)
-                {
-                    case 1:
-                    {
-                        DoScriptText(SAY_THARNARIUN_CLEANSED, m_creature);
-                        m_uiPlaguedLandsTimer = 100;
-                        PlaguedLandsCount++;
-                        break;
-                    }
-                    case 2:
-                    {
-                        m_creature->HandleEmoteCommand(EMOTE_ONESHOT_EXCLAMATION);
-                        m_uiPlaguedLandsTimer = 100;
-                        PlaguedLandsCount++;
-                        break;
-                    }
-                    case 3:
-                    {
-                        if (pPlaguedLandsPlayer)
-                            pPlaguedLandsBear = pPlaguedLandsPlayer->FindNearestCreature(NPC_CAPTURED_RABID_THISTLE_BEAR, 10);
-
-                        if (pPlaguedLandsBear)
-                        {
-                            pPlaguedLandsBear->CastSpell(pPlaguedLandsBear, SPELL_THARNARIUN_HEAL, true);
-                            m_uiPlaguedLandsTimer = 3500;
-                            PlaguedLandsCount++;
-                            break;
-                        }
-                        else
-                        {
-                            m_bPlaguedLandsEvent = false;
-                        }
-                    }
-                    case 4:
-                    {
-                        if (pPlaguedLandsBear)
-                            pPlaguedLandsBear->DisappearAndDie();
-
-                        m_bPlaguedLandsEvent = false;
-                        break;
-                    }
-                    default:
-                    {
-                        m_bPlaguedLandsEvent = false;
-                        break;
-                    }
-                }
-            }
-            else m_uiPlaguedLandsTimer -= diff;
-        }
-
-        //Return since we have no target
-        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
-            return;
-
-        DoMeleeAttackIfReady();
-    }
-};
-
-CreatureAI* GetAI_npc_tharnariun_treetender(Creature *_Creature)
-{
-    return new npc_tharnariun_treetenderAI(_Creature);
-}
-
-bool QuestComplete_npc_tharnariun_treetender(Player* pPlayer, Creature* pQuestGiver, Quest const* pQuest)
-{
-    if (!pQuestGiver)
-        return false;
-
-    if (!pPlayer)
-        return false;
-
-    if (pQuest->GetQuestId() == QUEST_PLAGUED_LANDS)
-    {
-        if (auto pTharnariunAI = static_cast<npc_tharnariun_treetenderAI*>(pQuestGiver->AI()))
-            pTharnariunAI->StartPlaguedLandsEvent(pPlayer); // event that plays on completion of quest Plagued Lands
     }
     return false;
 }
@@ -1124,10 +1003,12 @@ struct npc_murkdeepAI : public ScriptedAI
 
         m_creature->SetVisibility(VISIBILITY_OFF);
         m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
     }
 
     ObjectGuid m_playerGuid;
     ObjectGuid m_bonfireGuid;
+    bool m_bHasFled;
     bool m_bEventState;
     uint8 m_uiEventPhase;
     uint32 m_uiEventTimer;
@@ -1138,6 +1019,7 @@ struct npc_murkdeepAI : public ScriptedAI
     {
         m_uiEventPhase = 0;
         m_bEventState = false;
+        m_bHasFled = false;
 
         m_uiSunderArmorTimer = urand(0, 5);
         m_uiNetTimer = urand(0, 20);
@@ -1273,39 +1155,47 @@ struct npc_murkdeepAI : public ScriptedAI
                 {
                     switch (m_uiEventPhase)
                     {
-                    case 1:
-                        DoSummon();
-                        m_uiEventTimer = 30000;
-                        ++m_uiEventPhase;
-                        break;
-                    case 2:
-                        DoSummon();
-                        m_uiEventTimer = 30000;
-                        ++m_uiEventPhase;
-                        break;
-                    case 3:
-                        DoSummon();
-                        m_creature->SetVisibility(VISIBILITY_ON);
-                        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                        case 1:
+                            DoSummon();
+                            m_uiEventTimer = 30000;
+                            ++m_uiEventPhase;
+                            break;
+                        case 2:
+                            DoSummon();
+                            m_uiEventTimer = 30000;
+                            ++m_uiEventPhase;
+                            break;
+                        case 3:
+                            DoSummon();
+                            m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                            m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+                            m_creature->SetVisibility(VISIBILITY_ON);
 
-                        Player* player = GetPlayer();
-                        if (player)
-                        {
-                            AttackStart(player);
-                        }
-                        else
-                        {
-                            m_creature->ForcedDespawn();
-                            m_creature->RemoveCorpse();
-                        }
-                        m_uiEventPhase = 0;
-                        break;
+                            Player* player = GetPlayer();
+                            if (player)
+                            {
+                                AttackStart(player);
+                            }
+                            else
+                            {
+                                m_creature->ForcedDespawn();
+                                m_creature->RemoveCorpse();
+                            }
+                            m_uiEventPhase = 0;
+                            break;
                     }
                 }
                 else
                     m_uiEventTimer -= uiDiff;
             }
 
+            return;
+        }
+
+        if (!m_bHasFled && m_creature->GetHealthPercent() < 15.0f)
+        {
+            m_bHasFled = true;
+            m_creature->DoFlee();
             return;
         }
 
@@ -1390,12 +1280,6 @@ void AddSC_darkshore()
     newscript->Name = "npc_rabid_thistle_bear";
     newscript->GetAI = &GetAI_npc_rabid_thistle_bear;
     newscript->pEffectDummyCreature = &EffectDummyCreature_npc_rabid_thistle_bear;
-    newscript->RegisterSelf();
-
-    newscript = new Script;
-    newscript->Name = "npc_tharnariun_treetender";
-    newscript->GetAI = &GetAI_npc_tharnariun_treetender;
-    newscript->pQuestRewardedNPC = &QuestComplete_npc_tharnariun_treetender;
     newscript->RegisterSelf();
 
     newscript = new Script;

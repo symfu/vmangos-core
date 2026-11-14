@@ -80,7 +80,7 @@ static bool findtoknth(std::string &str, int n, std::string::size_type &s, std::
     return e != std::string::npos;
 }
 
-std::string gettoknth(std::string &str, int n)
+static std::string gettoknth(std::string &str, int n)
 {
     std::string::size_type s = 0, e = 0;
     if (!findtoknth(str, n, s, e))
@@ -89,7 +89,7 @@ std::string gettoknth(std::string &str, int n)
     return str.substr(s, e - s);
 }
 
-bool findnth(std::string &str, int n, std::string::size_type &s, std::string::size_type &e)
+static bool findnth(std::string &str, int n, std::string::size_type &s, std::string::size_type &e)
 {
     s = str.find("VALUES ('") + 9;
     if (s == std::string::npos)
@@ -117,17 +117,18 @@ bool findnth(std::string &str, int n, std::string::size_type &s, std::string::si
     return true;
 }
 
-std::string gettablename(std::string &str)
+static std::string gettablename(std::string &str)
 {
-    std::string::size_type s = 13;
-    std::string::size_type e = str.find(_TABLE_SIM_, s);
-    if (e == std::string::npos)
+    // Find the tablename in "INSERT INTO `tablename` ..."
+    auto startIndex = sizeof("INSERT INTO `");
+    auto endIndex = str.find('`', startIndex);
+    if (endIndex == std::string::npos)
         return "";
 
-    return str.substr(s, e - s);
+    return str.substr(startIndex - 1, endIndex - startIndex + 1);
 }
 
-bool changenth(std::string &str, int n, char const* with, bool insert = false, bool nonzero = false)
+static bool changenth(std::string &str, int n, char const* with, bool insert = false, bool nonzero = false)
 {
     std::string::size_type s, e;
     if (!findnth(str, n, s, e))
@@ -143,7 +144,7 @@ bool changenth(std::string &str, int n, char const* with, bool insert = false, b
     return true;
 }
 
-std::string getnth(std::string &str, int n)
+static std::string getnth(std::string &str, int n)
 {
     std::string::size_type s, e;
     if (!findnth(str, n, s, e))
@@ -152,7 +153,7 @@ std::string getnth(std::string &str, int n)
     return str.substr(s, e - s);
 }
 
-bool changetoknth(std::string &str, int n, char const* with, bool insert = false, bool nonzero = false)
+static bool changetoknth(std::string &str, int n, char const* with, bool insert = false, bool nonzero = false)
 {
     std::string::size_type s = 0, e = 0;
     if (!findtoknth(str, n, s, e))
@@ -167,7 +168,7 @@ bool changetoknth(std::string &str, int n, char const* with, bool insert = false
     return true;
 }
 
-uint32 registerNewGuid(uint32 oldGuid, std::map<uint32, uint32>& guidMap, uint32 hiGuid)
+static uint32 registerNewGuid(uint32 oldGuid, std::map<uint32, uint32>& guidMap, uint32 hiGuid)
 {
     std::map<uint32, uint32>::const_iterator itr = guidMap.find(oldGuid);
     if (itr != guidMap.end())
@@ -178,7 +179,7 @@ uint32 registerNewGuid(uint32 oldGuid, std::map<uint32, uint32>& guidMap, uint32
     return newguid;
 }
 
-bool changeGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, uint32 hiGuid, bool nonzero = false)
+static bool changeGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, uint32 hiGuid, bool nonzero = false)
 {
     char chritem[20];
     uint32 oldGuid = atoi(getnth(str, n).c_str());
@@ -191,7 +192,7 @@ bool changeGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, uint
     return changenth(str, n, chritem, false, nonzero);
 }
 
-bool changetokGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, uint32 hiGuid, bool nonzero = false)
+static bool changetokGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, uint32 hiGuid, bool nonzero = false)
 {
     char chritem[20];
     uint32 oldGuid = atoi(gettoknth(str, n).c_str());
@@ -204,13 +205,13 @@ bool changetokGuid(std::string &str, int n, std::map<uint32, uint32>& guidMap, u
     return changetoknth(str, n, chritem, false, nonzero);
 }
 
-std::string CreateDumpString(char const* tableName, QueryResult* result)
+static std::string CreateDumpString(char const* tableName, const std::unique_ptr<QueryResult>& result)
 {
     if (!tableName || !result)
         return "";
 
     std::ostringstream ss;
-    ss << "INSERT INTO " << _TABLE_SIM_ << tableName << _TABLE_SIM_ << " VALUES (";
+    ss << "INSERT INTO " << '`' << tableName << '`' << " VALUES (";
     Field* fields = result->Fetch();
     for (uint32 i = 0; i < result->GetFieldCount(); ++i)
     {
@@ -260,7 +261,7 @@ std::string PlayerDumpWriter::GenerateWhereStr(char const* field, GUIDs const& g
     return wherestr.str();
 }
 
-void StoreGUID(QueryResult* result, uint32 field, std::set<uint32>& guids)
+static void StoreGUID(const std::unique_ptr<QueryResult>& result, uint32 field, std::set<uint32>& guids)
 {
     Field* fields = result->Fetch();
     uint32 guid = fields[field].GetUInt32();
@@ -268,7 +269,7 @@ void StoreGUID(QueryResult* result, uint32 field, std::set<uint32>& guids)
         guids.insert(guid);
 }
 
-void StoreGUID(QueryResult* result, uint32 data, uint32 field, std::set<uint32>& guids)
+static void StoreGUID(const std::unique_ptr<QueryResult>& result, uint32 data, uint32 field, std::set<uint32>& guids)
 {
     Field* fields = result->Fetch();
     std::string dataStr = fields[data].GetCppString();
@@ -338,7 +339,7 @@ void PlayerDumpWriter::DumpTableContent(std::string& dump, uint32 guid, char con
         else                                                // not set case, get single guid string
             wherestr = GenerateWhereStr(fieldname, guid);
 
-        QueryResult* result = CharacterDatabase.PQuery("SELECT * FROM %s WHERE %s", tableFrom, wherestr.c_str());
+        std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT * FROM %s WHERE %s", tableFrom, wherestr.c_str());
         if (!result)
             return;
 
@@ -372,8 +373,6 @@ void PlayerDumpWriter::DumpTableContent(std::string& dump, uint32 guid, char con
             dump += "\n";
         }
         while (result->NextRow());
-
-        delete result;
     }
     while (guids && guids_itr != guids->end());             // not set case iterate single time, set case iterate for all guids
 }
@@ -421,7 +420,7 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
     if (!fin)
         return DUMP_FILE_OPEN_ERROR;
 
-    QueryResult* result = nullptr;
+    std::unique_ptr<QueryResult> result = nullptr;
     char newguid[20], chraccount[20], newpetid[20], currpetid[20], lastpetid[20];
 
     // make sure the same guid doesn't already exist and is safe to use
@@ -432,7 +431,6 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
         if (result)
         {
             guid = sObjectMgr.m_CharGuids.GetNextAfterMaxUsed();
-            delete result;
         }
         else incHighest = false;
     }
@@ -450,7 +448,6 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
         if (result)
         {
             name.clear();                                      // use the one from the dump
-            delete result;
         }
     }
     else
@@ -497,7 +494,7 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
         std::string tn = gettablename(line);
         if (tn.empty())
         {
-            sLog.outError("LoadPlayerDump: Can't extract table name from line: '%s'!", line.c_str());
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "LoadPlayerDump: Can't extract table name from line: '%s'!", line.c_str());
             ROLLBACK(DUMP_FILE_BROKEN);
         }
 
@@ -514,7 +511,7 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
 
         if (!dTable->isValid())
         {
-            sLog.outError("LoadPlayerDump: Unknown table: '%s'!", tn.c_str());
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "LoadPlayerDump: Unknown table: '%s'!", tn.c_str());
             ROLLBACK(DUMP_FILE_BROKEN);
         }
 
@@ -543,9 +540,7 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
                     result = CharacterDatabase.PQuery("SELECT * FROM `characters` WHERE `name` = '%s'", name.c_str());
                     if (result)
                     {
-                        delete result;
-
-                        if (!changenth(line, 35, "1"))      // characters.at_login_flags set to "rename on login"
+                        if (!changenth(line, 15, "16384"))  // characters.character_flags set to "rename on login"
                             ROLLBACK(DUMP_FILE_BROKEN);
                     }
                 }
@@ -670,7 +665,7 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
                 break;
             }
             default:
-                sLog.outError("Unknown dump table type: %u", type);
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Unknown dump table type: %u", type);
                 break;
         }
 
@@ -681,12 +676,20 @@ DumpReturn PlayerDumpReader::LoadDump(std::string const& file, uint32 account, s
     CharacterDatabase.CommitTransaction();
 
     //FIXME: current code with post-updating guids not safe for future per-map threads
-    sObjectMgr.m_ItemGuids.Set(sObjectMgr.m_ItemGuids.GetNextAfterMaxUsed() + items.size());
-    sObjectMgr.m_MailIds.Set(sObjectMgr.m_MailIds.GetNextAfterMaxUsed() +  mails.size());
-    sObjectMgr.m_ItemTextIds.Set(sObjectMgr.m_ItemTextIds.GetNextAfterMaxUsed() + itemTexts.size());
+    uint64 newMaxItemGuid = sObjectMgr.m_ItemGuids.GetNextAfterMaxUsed() + uint64(items.size());
+    MANGOS_ASSERT(newMaxItemGuid < UINT32_MAX);
+    sObjectMgr.m_ItemGuids.SetMaxUsedGuid(newMaxItemGuid, "Item");
+
+    uint64 newMaxMailId = sObjectMgr.m_MailIds.GetNextAfterMaxUsed() + uint64(mails.size());
+    MANGOS_ASSERT(newMaxMailId < UINT32_MAX);
+    sObjectMgr.m_MailIds.SetMaxUsedGuid(newMaxMailId, "Mail");
+
+    uint64 newMaxItemTextId = sObjectMgr.m_ItemTextIds.GetNextAfterMaxUsed() + uint64(itemTexts.size());
+    MANGOS_ASSERT(newMaxItemTextId < UINT32_MAX);
+    sObjectMgr.m_ItemTextIds.SetMaxUsedGuid(newMaxItemTextId, "Item Text");
 
     if (incHighest)
-        sObjectMgr.m_CharGuids.Set(sObjectMgr.m_CharGuids.GetNextAfterMaxUsed() + 1);
+        sObjectMgr.m_CharGuids.SetMaxUsedGuid(sObjectMgr.m_CharGuids.GetNextAfterMaxUsed() + 1, "Character");
 
     fclose(fin);
 

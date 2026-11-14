@@ -24,7 +24,9 @@
 #include "Spell.h"
 #include "Battlegrounds/BattleGround.h"
 #include "BattleGroundAV.h"
+#include "BattleGroundWS.h"
 #include "Geometry.h"
+#include "Utilities/Random.h"
 
 using namespace Geometry;
 
@@ -83,22 +85,15 @@ void WSG_AtAllianceFlag(BattleBotAI* pAI)
                 if (pAI->me->IsWithinDistInMap(pFlag, INTERACTION_DISTANCE))
                 {
                     pAI->ClearPath();
-                    WorldPacket data(CMSG_GAMEOBJ_USE);
-                    data << pFlag->GetObjectGuid();
-                    pAI->me->GetSession()->HandleGameObjectUseOpcode(data);
+                    WorldPackets::Misc::GameObjectUse packet;
+                    packet.guid = pFlag->GetObjectGuid();
+                    pAI->me->GetSession()->HandleGameObjectUseOpcode(packet);
                     return;
                 }
                 else
                 {
                     pAI->ClearPath();
-                    ObjectGuid guid = pFlag->GetObjectGuid();
                     pAI->me->GetMotionMaster()->MovePoint(0, pFlag->GetPositionX(), pFlag->GetPositionY(), 353.0f);
-                    pAI->me->m_Events.AddLambdaEventAtOffset([pAI, guid]
-                    {
-                        WorldPacket data(CMSG_GAMEOBJ_USE);
-                        data << guid;
-                        pAI->me->GetSession()->HandleGameObjectUseOpcode(data);
-                    }, 2000);
                     return;
                 }
             }
@@ -106,17 +101,11 @@ void WSG_AtAllianceFlag(BattleBotAI* pAI)
             {
                 pAI->ClearPath();
                 pAI->me->GetMotionMaster()->MovePoint(0, pFlag->GetPositionX(), pFlag->GetPositionY(), 353.0f);
-                pAI->me->m_Events.AddLambdaEventAtOffset([pAI]
-                {
-                    WorldPacket data(CMSG_AREATRIGGER);
-                    data << uint32(AT_SILVERWING_FLAG);
-                    pAI->me->GetSession()->HandleAreaTriggerOpcode(data);
-                }, 2000);
                 return;
             }
         }
     }
-    
+
     pAI->MoveToNextPoint();
 }
 
@@ -131,22 +120,15 @@ void WSG_AtHordeFlag(BattleBotAI* pAI)
                 if (pAI->me->IsWithinDistInMap(pFlag, INTERACTION_DISTANCE))
                 {
                     pAI->ClearPath();
-                    WorldPacket data(CMSG_GAMEOBJ_USE);
-                    data << pFlag->GetObjectGuid();
-                    pAI->me->GetSession()->HandleGameObjectUseOpcode(data);
+                    WorldPackets::Misc::GameObjectUse packet;
+                    packet.guid = pFlag->GetObjectGuid();
+                    pAI->me->GetSession()->HandleGameObjectUseOpcode(packet);
                     return;
                 }
                 else
                 {
                     pAI->ClearPath();
-                    ObjectGuid guid = pFlag->GetObjectGuid();
                     pAI->me->GetMotionMaster()->MovePoint(0, pFlag->GetPositionX(), pFlag->GetPositionY(), pFlag->GetPositionZ());
-                    pAI->me->m_Events.AddLambdaEventAtOffset([pAI, guid]
-                    {
-                        WorldPacket data(CMSG_GAMEOBJ_USE);
-                        data << guid;
-                        pAI->me->GetSession()->HandleGameObjectUseOpcode(data);
-                    }, 2000);
                     return;
                 }
             }
@@ -154,12 +136,6 @@ void WSG_AtHordeFlag(BattleBotAI* pAI)
             {
                 pAI->ClearPath();
                 pAI->me->GetMotionMaster()->MovePoint(0, pFlag->GetPositionX(), pFlag->GetPositionY(), pFlag->GetPositionZ());
-                pAI->me->m_Events.AddLambdaEventAtOffset([pAI]
-                {
-                    WorldPacket data(CMSG_AREATRIGGER);
-                    data << uint32(AT_WARSONG_FLAG);
-                    pAI->me->GetSession()->HandleAreaTriggerOpcode(data);
-                }, 2000);
                 return;
             }
         }
@@ -231,7 +207,7 @@ void AtFlag(BattleBotAI* pAI, std::vector<uint32> const& vFlagIds)
             }
         }
     }
-    
+
     pAI->MoveToNextPoint();
 }
 
@@ -266,7 +242,7 @@ void MoveToNextPointSpecial(BattleBotAI* pAI)
     uint32 const lastPointInPath = pAI->m_movingInReverse ? 0 : ((*pAI->m_currentPath).size() - 1);
 
     if ((pAI->m_currentPoint == lastPointInPath) ||
-        pAI->me->IsInCombat() || !pAI->me->IsAlive())
+        (pAI->me->IsInCombat() && !pAI->ShouldIgnoreCombat()) || !pAI->me->IsAlive())
     {
         // Path is over.
         pAI->ClearPath();
@@ -1633,6 +1609,13 @@ BattleBotPath vPath_AV_Stormpike_Crossroad_to_Stormpike_Flag =
     { 667.173f, -295.225f, 30.29f, &AV_AtFlag },
 };
 
+BattleBotPath vPath_AV_Stormpike_Graveyard_to_Stormpike_Flag =
+{
+    { 676.0f, -374.0f, 29.782f, nullptr },
+    { 665.922f, -347.777f, 29.493f, nullptr },
+    { 667.173f, -295.225f, 30.29f, &AV_AtFlag },
+};
+
 BattleBotPath vPath_AV_Alliance_Cave_Slop_Crossroad_to_Alliance_Slope_Crossroad =
 {
     { 450.8f, -434.864f, 30.5126f, nullptr },
@@ -1736,6 +1719,7 @@ std::vector<BattleBotPath*> const vPaths_AV =
     &vPath_AV_Alliance_Slope_Crossroad_to_Stormpike_Crossroad,
     &vPath_AV_Stormpike_Crossroad_to_Alliance_Base_Bunker_First_Crossroad,
     &vPath_AV_Stormpike_Crossroad_to_Stormpike_Flag,
+    &vPath_AV_Stormpike_Graveyard_to_Stormpike_Flag,
     &vPath_AV_Alliance_Base_Bunker_First_Crossroad_to_Alliance_Base_North_Bunker,
     &vPath_AV_Alliance_Base_Bunker_First_Crossroad_to_Alliance_Base_Bunker_Second_Crossroad,
     &vPath_AV_Alliance_Base_Bunker_Second_Crossroad_to_Alliance_Base_South_Bunker,
@@ -1761,16 +1745,19 @@ std::vector<BattleBotPath*> const vPaths_NoReverseAllowed =
     &vPath_AV_Alliance_Cave_to_Alliance_Cave_Slop_Crossroad,
     &vPath_AV_Horde_Cave_to_Frostwolf_Graveyard_Flag,
     &vPath_AV_Alliance_Cave_Slop_Crossroad_to_Alliance_Slope_Crossroad,
+    &vPath_AV_Stormpike_Graveyard_to_Stormpike_Flag,
 };
 
 void BattleBotAI::MovementInform(uint32 movementType, uint32 data)
 {
     if (movementType == POINT_MOTION_TYPE)
-    { 
+    {
         if (m_currentPath && m_currentPath->at(data).pFunc)
             (*m_currentPath->at(data).pFunc)(this);
         else
             MoveToNextPoint();
+
+        ActivateNearbyAreaTrigger();
     }
 }
 
@@ -1782,7 +1769,7 @@ void BattleBotAI::MoveToNextPoint()
     uint32 const lastPointInPath = m_movingInReverse ? 0 : ((*m_currentPath).size() - 1);
 
     if ((m_currentPoint == lastPointInPath) ||
-        me->IsInCombat() || !me->IsAlive())
+        (me->IsInCombat() && !ShouldIgnoreCombat()) || !me->IsAlive())
     {
         // Path is over.
         ClearPath();
@@ -1796,7 +1783,7 @@ void BattleBotAI::MoveToNextPoint()
 
     BattleBotWaypoint& nextPoint = m_currentPath->at(m_currentPoint);
 
-    me->GetMotionMaster()->MovePoint(m_currentPoint, nextPoint.x + frand(-1, 1), nextPoint.y + frand(-1, 1), nextPoint.z, MOVE_PATHFINDING);
+    me->GetMotionMaster()->MovePoint(m_currentPoint, nextPoint.x + frand(-1, 1), nextPoint.y + frand(-1, 1), nextPoint.z, MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
 }
 
 bool BattleBotAI::StartNewPathFromBeginning()
@@ -1940,7 +1927,7 @@ bool BattleBotAI::StartNewPathToPosition(Position const& targetPosition, std::ve
                 }
             }
         }
-        
+
         if (std::find(vPaths_NoReverseAllowed.begin(), vPaths_NoReverseAllowed.end(), pPath) != vPaths_NoReverseAllowed.end())
             continue;
 
@@ -1977,7 +1964,7 @@ bool BattleBotAI::StartNewPathToPosition(Position const& targetPosition, std::ve
     {
         if (closestPoint == 0)
             return false;
-            
+
     }
     else
     {
@@ -2068,7 +2055,7 @@ bool BattleBotAI::StartNewPathToObjective()
                 {
                     if (GameObject* pGO = me->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(BG_AV_SNOWFALL_GY, NEUTRAL_CONTROLLED)))
                         if (me->IsWithinDist(pGO, VISIBILITY_DISTANCE_LARGE))
-                            return StartNewPathToPosition(pGO->GetPosition(), vPaths_AV);  
+                            return StartNewPathToPosition(pGO->GetPosition(), vPaths_AV);
                 }
 
                 if (!bg->IsActiveEvent(BG_AV_NodeEventCaptainDead_A, 0))
@@ -2116,7 +2103,7 @@ bool BattleBotAI::StartNewPathToObjective()
                         if (me->IsWithinDist(pGO, VISIBILITY_DISTANCE_LARGE))
                             return StartNewPathToPosition(pGO->GetPosition(), vPaths_AV);
                 }
-                
+
                 // Chance to defend.
                 if (roll_chance_u(25))
                 {
@@ -2166,10 +2153,28 @@ bool BattleBotAI::StartNewPathToObjective()
         }
         case BATTLEGROUND_WS:
         {
-            if (me->HasAura(AURA_WARSONG_FLAG))
-                return StartNewPathToPosition(WS_FLAG_POS_ALLIANCE, vPaths_WS);
-            if (me->HasAura(AURA_SILVERWING_FLAG))
-                return StartNewPathToPosition(WS_FLAG_POS_HORDE, vPaths_WS);
+            if (me->GetTeam() == HORDE)
+            {
+                if (me->HasAura(AURA_SILVERWING_FLAG))
+                    return StartNewPathToPosition(WS_FLAG_POS_HORDE, vPaths_WS);
+                if (!static_cast<BattleGroundWS*>(bg)->IsAllianceFlagPickedup())
+                {
+                    float const distance = me->GetDistance(WS_FLAG_POS_ALLIANCE);
+                    if (distance > 20.0f && distance < 300.0f)
+                        return StartNewPathToPosition(WS_FLAG_POS_ALLIANCE, vPaths_WS);
+                }
+            }
+            else
+            {
+                if (me->HasAura(AURA_WARSONG_FLAG))
+                    return StartNewPathToPosition(WS_FLAG_POS_ALLIANCE, vPaths_WS);
+                if (!static_cast<BattleGroundWS*>(bg)->IsHordeFlagPickedup())
+                {
+                    float const distance = me->GetDistance(WS_FLAG_POS_HORDE);
+                    if (distance > 20.0f && distance < 300.0f)
+                        return StartNewPathToPosition(WS_FLAG_POS_HORDE, vPaths_WS);
+                }
+            }
             break;
         }
     }

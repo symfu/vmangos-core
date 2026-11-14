@@ -1,4 +1,4 @@
-﻿/*
+/*
  *
  */
 
@@ -7,8 +7,8 @@
 
 enum
 {
-    SAY_TAERAR_AGGRO                = -1000399,
-    SAY_SUMMON_SHADE                = -1000400,
+    SAY_TAERAR_AGGRO                = 10886,
+    SAY_SUMMON_SHADE                = 10887,
 
     SPELL_ARCANE_BLAST              = 24857,
     SPELL_BELLOWING_ROAR            = 22686,
@@ -142,9 +142,7 @@ bool boss_taerarAI::UpdateDragonAI(uint32 const uiDiff)
 
 npc_shade_of_taerarAI::npc_shade_of_taerarAI(Creature* pCreature) : ScriptedPetAI(pCreature)
 {
-    if (m_creature->GetCharmInfo())
-        m_creature->GetCharmInfo()->SetReactState(REACT_AGGRESSIVE);
-
+    m_creature->SetReactState(REACT_AGGRESSIVE);
     npc_shade_of_taerarAI::Reset();
 }
 

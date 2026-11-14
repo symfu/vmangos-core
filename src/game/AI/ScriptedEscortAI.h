@@ -6,6 +6,7 @@
 #define SC_ESCORTAI_H
 
 #include "ScriptedAI.h"
+#include <memory>
 
 class Quest;
 
@@ -49,7 +50,6 @@ struct npc_escortAI : ScriptedAI
         void ResetCreature() override {}
 
         // CreatureAI functions
-        void AttackStart(Unit*) override;
 
         void EnterCombat(Unit*) override;
 

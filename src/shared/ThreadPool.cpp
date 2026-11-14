@@ -18,6 +18,7 @@
 
 #include "ThreadPool.h"
 #include "Log.h"
+#include "IO/Multithreading/CreateThread.h"
 #include <mysql.h>
 
 #ifdef WIN32
@@ -25,8 +26,8 @@
 #undef IGNORE
 #endif
 
-ThreadPool::ThreadPool(int numThreads, ClearMode when, ErrorHandling mode) :
-    m_errorHandling(mode), m_size(numThreads), m_clearMode(when), m_active(0)
+ThreadPool::ThreadPool(std::string const& name, int numThreads, ClearMode when, ErrorHandling mode) :
+     m_poolName(name), m_errorHandling(mode), m_size(numThreads), m_clearMode(when), m_active(0)
 {
     m_workers.reserve(m_size);
 }
@@ -114,7 +115,7 @@ void ThreadPool::clearWorkload()
 }
 
 ThreadPool::worker::worker(ThreadPool *pool, int id, ThreadPool::ErrorHandling mode) :
-    id(id), errorHandling(mode), pool(pool), thread([this](){this->loop_wrapper();})
+    id(id), errorHandling(mode), pool(pool), thread(IO::Multithreading::CreateThread(pool->m_poolName + "[" + std::to_string(id) + "]", [this](){this->loop_wrapper();}))
 {
 }
 
@@ -156,15 +157,15 @@ void ThreadPool::worker::loop_wrapper()
         }
         catch (const std::exception &e)
         {
-            sLog.outError("A ThreadPool task generated an exception: %s",e.what());
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "A ThreadPool task generated an exception: %s",e.what());
         }
         catch (const std::string &e)
         {
-            sLog.outError("A ThreadPool task generated an exception: %s", e.c_str());
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "A ThreadPool task generated an exception: %s", e.c_str());
         }
         catch (...)
         {
-            sLog.outError("A ThreadPool task generated an exception");
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "A ThreadPool task generated an exception");
         }
         if (pool->m_errorHandling == ErrorHandling::TERMINATE)
             pool->m_status = Status::TERMINATING;

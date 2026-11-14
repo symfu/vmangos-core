@@ -51,21 +51,6 @@ bool GOHello_go_keystone_chamber(Player* pPlayer, GameObject* pGo)
     return false;
 }
 
-// Return true to avoid db script attempt
-bool ProcessEventId_event_awaken_stone_keeper(uint32 eventId, Object* source, Object* target, bool isStart)
-{
-    if (!source || source->GetTypeId() != TYPEID_PLAYER)
-        return true;
-
-    if (!target)
-        return true;
-
-    if (ScriptedInstance* instance = dynamic_cast<ScriptedInstance*>(((Player*)source)->GetInstanceData()))
-        instance->SetData(ULDAMAN_ENCOUNTER_STONE_KEEPERS, IN_PROGRESS);
-
-    return true;
-}
-
 struct mob_stone_keeperAI : public ScriptedAI
 {
     mob_stone_keeperAI(Creature* pCreature) : ScriptedAI(pCreature)
@@ -156,23 +141,19 @@ struct mob_jadespine_basiliskAI : public ScriptedAI
         if (Cslumber_Timer < diff)
         {
             //Cast
-            // DoCastSpellIfCan(m_creature->GetVictim(),SPELL_CRYSTALLINE_SLUMBER);
             m_creature->CastSpell(m_creature->GetVictim(), SPELL_CRYSTALLINE_SLUMBER, false);
+            m_creature->GetThreatManager().modifyThreatPercent(m_creature->GetVictim(), -100);
 
-            //Stop attacking target thast asleep and pick new target
+            //Stop attacking target thats asleep and pick new target
             Cslumber_Timer = 28000;
 
-            Unit* Target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_TOPAGGRO, 0);
+            Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_TOPAGGRO, 0);
 
-            if (!Target || Target == m_creature->GetVictim())
-            {
-                Target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0);
-            }
+            if (!pTarget || pTarget == m_creature->GetVictim())
+                pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_TOPAGGRO, 1);
 
-            if (Target)
-            {
-                m_creature->TauntApply(Target);
-            }
+            if (pTarget)
+                AttackStart(pTarget);
         }
         else Cslumber_Timer -= diff;
 
@@ -190,7 +171,7 @@ struct AnnoraAI : public ScriptedAI
     AnnoraAI(Creature* pCreature) : ScriptedAI(pCreature)
     {
         m_creature->SetVisibility(VISIBILITY_OFF);
-        m_creature->SetFactionTemplateId(FACTION_STONED);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC);
         m_uiNbScorpion = 0;
         isSpawned = false;
         Reset();
@@ -246,12 +227,19 @@ CreatureAI* GetAI_annora(Creature* pCreature)
     return new AnnoraAI(pCreature);
 }
 
-enum
+// 10258 - Awaken Vault Warder (Uldaman)
+struct UldamanAwakenVaultWarderScript : SpellScript
 {
-    SPELL_FIRE_SHIELD       =   2602,
-    SPELL_FLAME_BUFFET      =   10452,
-
+    void OnSetTargetMap(Spell* spell, SpellEffectIndex /*effIdx*/, uint32& /*targetMode*/, float& /*radius*/, uint32& unMaxTargets, bool& /*selectClosestTargets*/) const final
+    {
+        unMaxTargets = 2;
+    }
 };
+
+SpellScript* GetScript_UldamanAwakenVaultWarder(SpellEntry const*)
+{
+    return new UldamanAwakenVaultWarderScript();
+}
 
 void AddSC_uldaman()
 {
@@ -279,7 +267,7 @@ void AddSC_uldaman()
     newscript->RegisterSelf();
 
     newscript = new Script;
-    newscript->Name = "event_awaken_stone_keeper";
-    newscript->pProcessEventId = &ProcessEventId_event_awaken_stone_keeper;
+    newscript->Name = "spell_uldaman_awaken_vault_warder";
+    newscript->GetSpellScript = &GetScript_UldamanAwakenVaultWarder;
     newscript->RegisterSelf();
 }

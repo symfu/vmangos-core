@@ -80,10 +80,11 @@ enum ConditionType
                                                             // Value2: 0,1,2 for condition true while quest active (0 any state, 1 if quest incomplete, 2 if quest completed).
     CONDITION_AD_COMMISSION_AURA    = 10,                   // Returns true if the player has an argent dawn commission aura.
                                                             // Requirement: Player Target
-    CONDITION_WAR_EFFORT_STAGE      = 11,                   // Checks the current state of the War Effect event.
+    CONDITION_SAVED_VARIABLE        = 11,                   // Checks a global saved variable.
                                                             // Requirement: None
-                                                            // Value1: stage
-                                                            // Value2: 0 : ==, 1: >= 2 <=
+                                                            // Value1: index
+                                                            // Value2: data
+                                                            // Value3: 0, 1 or 2 (0: equal to, 1: equal or higher than, 2: equal or less than)
     CONDITION_ACTIVE_GAME_EVENT     = 12,                   // Checks if a given game event is currently active.
                                                             // Requirement: None
                                                             // Value1: event_id
@@ -201,8 +202,10 @@ enum ConditionType
                                                             // Value2: 0, 1 or 2 (0: equal to, 1: equal or higher than, 2: equal or less than)
     CONDITION_IS_IN_COMBAT          = 43,                   // Checks if the target is currently in combat.
                                                             // Requirement: Unit Target
-    CONDITION_IS_HOSTILE_TO         = 44,                   // Returns true if the target is hostile to the source.
+    CONDITION_REACTION              = 44,                   // Returns true if the target's reaction to the source matches the criteria.
                                                             // Requirement: WorldObject Source, WorldObject Target
+                                                            // Value1: reaction (see enum ReputationRank)
+                                                            // Value2: 0, 1 or 2 (0: equal to, 1: equal or higher than, 2: equal or less than)
     CONDITION_IS_IN_GROUP           = 45,                   // Returns true if the player is in a group.
                                                             // Requirement: Player Target
     CONDITION_IS_ALIVE              = 46,                   // Returns true if the target is alive.
@@ -245,6 +248,18 @@ enum ConditionType
     CONDITION_OBJECT_GO_STATE       = 55,                   // Checks the current go state of a GameObject.
                                                             // Requirement: GameObject Target
                                                             // Value1: go_state (see enum GOState)
+    CONDITION_NEARBY_PLAYER         = 56,                   // Checks if there is a player nearby.
+                                                            // Requirement: Unit Target
+                                                            // Value1: 0, 1, or 2 (0: any, 1: hostile, 2: friendly)
+                                                            // Value2: search_radius
+    CONDITION_CREATURE_GROUP_MEMBER = 57,                   // Checks if creature is part of a group.
+                                                            // Requirement: Creature Source
+                                                            // Value1: leader_guid (optional)
+    CONDITION_CREATURE_GROUP_DEAD   = 58,                   // Checks if creature's group is dead.
+                                                            // Requirement: Creature Source
+    CONDITION_AREA_EXPLORED         = 59,                   // Checks if the player has explored the specified area.
+                                                            // Requirement: Player Target
+                                                            // Value1: area_id
 };
 
 enum ConditionFlags

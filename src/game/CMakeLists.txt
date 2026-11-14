@@ -15,7 +15,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-set (game_SRCS 
+set (game_SRCS
     AccountMgr.cpp
     AuraRemovalMgr.cpp
     AutoBroadCastMgr.cpp
@@ -46,22 +46,19 @@ set (game_SRCS
     UnitAuraProcHandler.cpp
     Weather.cpp
     World.cpp
-    WorldSession.cpp
-    AI/AggressorAI.cpp
+    AI/BasicAI.cpp
     AI/CreatureAI.cpp
     AI/CreatureAIRegistry.cpp
     AI/CreatureAISelector.cpp
     AI/CreatureEventAI.cpp
     AI/CreatureEventAIMgr.cpp
     AI/CritterAI.cpp
-    AI/GenericSpellAI.cpp
     AI/GuardAI.cpp
     AI/GuardEventAI.cpp
     AI/NullCreatureAI.cpp
     AI/PetAI.cpp
     AI/PetEventAI.cpp
     AI/PlayerAI.cpp
-    AI/ReactorAI.cpp
     AI/ScriptedAI.cpp
     AI/ScriptedEscortAI.cpp
     AI/ScriptedFollowerAI.cpp
@@ -115,7 +112,6 @@ set (game_SRCS
     Handlers/GroupHandler.cpp
     Handlers/GuildHandler.cpp
     Handlers/ItemHandler.cpp
-    Handlers/LFGHandler.cpp
     Handlers/LootHandler.cpp
     Handlers/MailHandler.cpp
     Handlers/MiscHandler.cpp
@@ -129,7 +125,9 @@ set (game_SRCS
     Handlers/SpellHandler.cpp
     Handlers/TaxiHandler.cpp
     Handlers/TradeHandler.cpp
+    LFG/LFGHandler.cpp
     LFG/LFGMgr.cpp
+    LFG/LFGQueue.cpp
     Mail/Mail.cpp
     Mail/MassMailMgr.cpp
     Maps/GridMap.cpp
@@ -148,6 +146,7 @@ set (game_SRCS
     Maps/ZoneScriptMgr.cpp
     Maps/Pool/PoolManager.cpp
     Movement/ConfusedMovementGenerator.cpp
+    Movement/CyclicMovementGenerator.cpp
     Movement/FearMovementGenerator.cpp
     Movement/FleeingMovementGenerator.cpp
     Movement/FollowerReference.cpp
@@ -172,12 +171,15 @@ set (game_SRCS
     Objects/DynamicObject.cpp
     Objects/GameObject.cpp
     Objects/Item.cpp
+    Objects/MirrorTimer.cpp
     Objects/Object.cpp
     Objects/Pet.cpp
     Objects/Player.cpp
+    Objects/PlayerTaxi.cpp
     Objects/SpellCaster.cpp
     Objects/TemporarySummon.cpp
     Objects/Totem.cpp
+    Objects/TradeData.cpp
     Objects/Unit.cpp
     Objects/UpdateData.cpp
     Objects/UpdateFields.cpp
@@ -193,14 +195,45 @@ set (game_SRCS
     PlayerBots/BattleBotWaypoints.cpp
     PlayerBots/PlayerBotAI.cpp
     PlayerBots/PlayerBotMgr.cpp
-    Protocol/Opcodes.cpp
-    Protocol/WorldSocket.cpp
-    Protocol/WorldSocketMgr.cpp
+    Server/Protocol/Opcodes.cpp
+    Server/Packets/Battleground.cpp
+    Server/Packets/AuctionHouse.cpp
+    Server/Packets/Channel.cpp
+    Server/Packets/Character.cpp
+    Server/Packets/Chat.cpp
+    Server/Packets/Combat.cpp
+    Server/Packets/Duel.cpp
+    Server/Packets/GmTicket.cpp
+    Server/Packets/Group.cpp
+    Server/Packets/Guild.cpp
+    Server/Packets/Instance.cpp
+    Server/Packets/Item.cpp
+    Server/Packets/Loot.cpp
+    Server/Packets/Mail.cpp
+    Server/Packets/Misc.cpp
+    Server/Packets/Movement.cpp
+    Server/Packets/Npc.cpp
+    Server/Packets/ObjectUpdate.cpp
+    Server/Packets/Pet.cpp
+    Server/Packets/Petition.cpp
+    Server/Packets/Query.cpp
+    Server/Packets/Quest.cpp
+    Server/Packets/Skill.cpp
+    Server/Packets/Social.cpp
+    Server/Packets/Spell.cpp
+    Server/Packets/Taxi.cpp
+    Server/Packets/Trade.cpp
+    Server/Packets/Warden.cpp
+    Server/WorldSession.cpp
+    Server/WorldSocket.cpp
+    Server/WorldSocketMgr.cpp
     Spells/Spell.cpp
     Spells/SpellAuras.cpp
+    Spells/SpellCastTargetsInfo.cpp
     Spells/SpellEffects.cpp
     Spells/SpellEntry.cpp
     Spells/SpellMgr.cpp
+    Spells/SpellModifier.cpp
     Spells/SpellModMgr.cpp
     Threat/HostileRefManager.cpp
     Threat/ThreatManager.cpp
@@ -215,10 +248,12 @@ set (game_SRCS
     vmap/VMapFactory.cpp
     vmap/VMapManager2.cpp
     vmap/WorldModel.cpp
+    AccountData.h
     AccountMgr.h
     AuraRemovalMgr.h
     AutoBroadCastMgr.h
     Camera.h
+    ClientDefines.h
     Conditions.h
     CreatureGroups.h
     Formulas.h
@@ -233,11 +268,13 @@ set (game_SRCS
     ItemEnchantmentMgr.h
     Language.h
     LootMgr.h
+    LoveIsInTheAir.h
     ObjectAccessor.h
     ObjectGridLoader.h
     ObjectGuid.h
     ObjectMgr.h
     ObjectPosSelector.h
+    PacketProcessing.h
     PlayerDump.h
     QuestDef.h
     ReputationMgr.h
@@ -249,8 +286,8 @@ set (game_SRCS
     UnitEvents.h
     Weather.h
     World.h
-    WorldSession.h
-    AI/AggressorAI.h
+    WorldStates.h
+    AI/BasicAI.h
     AI/CreatureAI.h
     AI/CreatureAIImpl.h
     AI/CreatureAIRegistry.h
@@ -265,7 +302,6 @@ set (game_SRCS
     AI/PetAI.h
     AI/PetEventAI.h
     AI/PlayerAI.h
-    AI/ReactorAI.h
     AI/ScriptedAI.h
     AI/ScriptedEscortAI.h
     AI/ScriptedFollowerAI.h
@@ -274,12 +310,30 @@ set (game_SRCS
     AI/ScriptedPetAI.h
     AI/TotemAI.h
     Anticheat/Anticheat.h
+    Anticheat/MovementAnticheat/MovementAnticheat.cpp
+    Anticheat/MovementAnticheat/MovementAnticheat.h
+    Anticheat/WardenAnticheat/Warden.cpp
+    Anticheat/WardenAnticheat/Warden.hpp
+    Anticheat/WardenAnticheat/WardenKeyGenerator.h
+    Anticheat/WardenAnticheat/WardenMac.cpp
+    Anticheat/WardenAnticheat/WardenMac.hpp
+    Anticheat/WardenAnticheat/WardenModule.cpp
+    Anticheat/WardenAnticheat/WardenModule.hpp
+    Anticheat/WardenAnticheat/WardenModuleMgr.cpp
+    Anticheat/WardenAnticheat/WardenModuleMgr.hpp
+    Anticheat/WardenAnticheat/WardenScan.cpp
+    Anticheat/WardenAnticheat/WardenScan.hpp
+    Anticheat/WardenAnticheat/WardenScanMgr.cpp
+    Anticheat/WardenAnticheat/WardenScanMgr.hpp
+    Anticheat/WardenAnticheat/WardenWin.cpp
+    Anticheat/WardenAnticheat/WardenWin.hpp
     AuctionHouse/AuctionHouseBotMgr.h
     AuctionHouse/AuctionHouseMgr.h
     Battlegrounds/BattleGround.h
     Battlegrounds/BattleGroundAB.h
     Battlegrounds/BattleGroundAV.h
     Battlegrounds/BattleGroundMgr.h
+    Battlegrounds/BattleGroundDefines.h
     Battlegrounds/BattleGroundWS.h
     Chat/Channel.h
     Chat/ChannelMgr.h
@@ -287,6 +341,7 @@ set (game_SRCS
     Chat/AsyncCommandHandlers.h
     Chat/AbstractPlayer.h
     Chat/MasterPlayer.h
+    Chat/MonsterChatBuilder.h
     Database/CharacterDatabaseCache.h
     Database/CharacterDatabaseCleaner.h
     Database/DBCEnums.h
@@ -302,8 +357,9 @@ set (game_SRCS
     Guild/GuildMgr.h
     Handlers/AddonHandler.h
     Handlers/NPCHandler.h
-    Handlers/LFGHandler.h
+    LFG/LFGDefines.h
     LFG/LFGMgr.h
+    LFG/LFGQueue.h
     Mail/Mail.h
     Mail/MassMailMgr.h
     Maps/Cell.h
@@ -330,6 +386,7 @@ set (game_SRCS
     Maps/ZoneScriptMgr.h
     Maps/Pool/PoolManager.h
     Movement/ConfusedMovementGenerator.h
+    Movement/CyclicMovementGenerator.h
     Movement/FearMovementGenerator.h
     Movement/FleeingMovementGenerator.h
     Movement/FollowerReference.h
@@ -357,18 +414,25 @@ set (game_SRCS
     Objects/Corpse.h
     Objects/Creature.h
     Objects/CreatureDefines.h
+    Objects/DamageStructs.h
     Objects/DynamicObject.h
     Objects/GameObject.h
     Objects/GameObjectDefines.h
     Objects/Item.h
+    Objects/ItemDefines.h
     Objects/ItemPrototype.h
+    Objects/MirrorTimer.h
+    Objects/MovementInfo.h
     Objects/Object.h
     Objects/ObjectDefines.h
     Objects/Pet.h
     Objects/Player.h
+    Objects/PlayerTaxi.h
     Objects/SpellCaster.h
     Objects/TemporarySummon.h
     Objects/Totem.h
+    Objects/TradeData.h
+    Objects/TransactionLog.h
     Objects/Unit.h
     Objects/UnitDefines.h
     Objects/UpdateData.h
@@ -384,16 +448,50 @@ set (game_SRCS
     PlayerBots/BattleBotWaypoints.h
     PlayerBots/PlayerBotAI.h
     PlayerBots/PlayerBotMgr.h
-    Protocol/Opcodes.h
-    Protocol/WorldSocket.h
-    Protocol/WorldSocketMgr.h
+    Server/Protocol/Opcodes.h
+    Server/Protocol/Opcodes_active.h
+    Server/Packet.h
+    Server/Packets/Battleground.h
+    Server/Packets/AuctionHouse.h
+    Server/Packets/Channel.h
+    Server/Packets/Character.h
+    Server/Packets/Chat.h
+    Server/Packets/Combat.h
+    Server/Packets/Duel.h
+    Server/Packets/GmTicket.h
+    Server/Packets/Group.h
+    Server/Packets/Guild.h
+    Server/Packets/Instance.h
+    Server/Packets/Item.h
+    Server/Packets/Loot.h
+    Server/Packets/Mail.h
+    Server/Packets/Misc.h
+    Server/Packets/Movement.h
+    Server/Packets/Npc.h
+    Server/Packets/ObjectUpdate.h
+    Server/Packets/Pet.h
+    Server/Packets/Petition.h
+    Server/Packets/Query.h
+    Server/Packets/Quest.h
+    Server/Packets/Skill.h
+    Server/Packets/Social.h
+    Server/Packets/Spell.h
+    Server/Packets/Taxi.h
+    Server/Packets/Trade.h
+    Server/Packets/Warden.h
+    Server/WorldPacket.h
+    Server/WorldSession.h
+    Server/WorldSocket.h
+    Server/WorldSocketMgr.h
     Spells/Spell.h
     Spells/SpellAuraDefines.h
     Spells/SpellAuras.h
+    Spells/SpellCastTargetsInfo.h
     Spells/SpellClassMask.h
     Spells/SpellDefines.h
     Spells/SpellEntry.h
     Spells/SpellMgr.h
+    Spells/SpellModifier.h
     Spells/SpellModMgr.h
     Threat/HostileRefManager.h
     Threat/ThreatManager.h
@@ -427,10 +525,7 @@ endif()
 if(WIN32)
   #allow exceptions in destructors
   if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:implicitNoexcept-")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /D__ACE_INLINE__")
-  elseif(MINGW)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
+    set(GAME_EXTRA_CXX_FLAGS "/Zc:implicitNoexcept-")
   endif()
 endif()
 
@@ -446,29 +541,6 @@ else()
       ${CMAKE_SOURCE_DIR}/src/scripts/ScriptLoader.h
   )
 endif()
-
-if(USE_ANTICHEAT)
-  list(APPEND game_SRCS
-      Anticheat/MovementAnticheat/MovementAnticheat.cpp
-      Anticheat/MovementAnticheat/MovementAnticheat.h
-      Anticheat/WardenAnticheat/Warden.cpp
-      Anticheat/WardenAnticheat/Warden.hpp
-      Anticheat/WardenAnticheat/WardenKeyGeneration.h
-      Anticheat/WardenAnticheat/WardenMac.cpp
-      Anticheat/WardenAnticheat/WardenMac.hpp
-      Anticheat/WardenAnticheat/WardenModule.cpp
-      Anticheat/WardenAnticheat/WardenModule.hpp
-      Anticheat/WardenAnticheat/WardenModuleMgr.cpp
-      Anticheat/WardenAnticheat/WardenModuleMgr.hpp
-      Anticheat/WardenAnticheat/WardenScan.cpp
-      Anticheat/WardenAnticheat/WardenScan.hpp
-      Anticheat/WardenAnticheat/WardenScanMgr.cpp
-      Anticheat/WardenAnticheat/WardenScanMgr.hpp
-      Anticheat/WardenAnticheat/WardenWin.cpp
-      Anticheat/WardenAnticheat/WardenWin.hpp
-  )
-endif()
-
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -492,25 +564,22 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/OutdoorPvP
   ${CMAKE_CURRENT_SOURCE_DIR}/PacketBroadcast
   ${CMAKE_CURRENT_SOURCE_DIR}/PlayerBots
-  ${CMAKE_CURRENT_SOURCE_DIR}/Protocol
+  ${CMAKE_CURRENT_SOURCE_DIR}/Server
+  ${CMAKE_CURRENT_SOURCE_DIR}/Server/Protocol
   ${CMAKE_CURRENT_SOURCE_DIR}/Spells
   ${CMAKE_CURRENT_SOURCE_DIR}/Threat
   ${CMAKE_CURRENT_SOURCE_DIR}/Transports
   ${CMAKE_CURRENT_SOURCE_DIR}/vmap
   ${CMAKE_SOURCE_DIR}/src/scripts
   ${CMAKE_SOURCE_DIR}/src/scripts/PrecompiledHeaders
-  ${CMAKE_SOURCE_DIR}/dep/include/g3dlite
   ${CMAKE_SOURCE_DIR}/dep/recastnavigation/Detour
   ${CMAKE_SOURCE_DIR}/dep/recastnavigation
   ${CMAKE_SOURCE_DIR}/dep/include
   ${CMAKE_SOURCE_DIR}/src/framework
-  ${CMAKE_SOURCE_DIR}/src/framework/Network
   ${CMAKE_SOURCE_DIR}/src/shared
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/src/shared
   ${MYSQL_INCLUDE_DIR}
-  ${TBB_INCLUDE_DIRS}
-  ${ACE_INCLUDE_DIR}
   ${OPENSSL_INCLUDE_DIR}
   ${ZLIB_INCLUDE_DIRS}
 )
@@ -539,12 +608,6 @@ source_group("Server"
     SharedDefines.h
 )
 
-source_group("Chat Commands"
-  REGULAR_EXPRESSION Level[0-9]
-  FILES
-    debugcmds.cpp
-)
-
 source_group("Tool"
   REGULAR_EXPRESSION DatabaseCleaner|Language|PlayerDump
 )
@@ -560,12 +623,17 @@ source_group("Anticheat"
 add_library(game STATIC
   ${game_SRCS}
 )
+mangos_target_flags(game)
+if(GAME_EXTRA_CXX_FLAGS)
+  target_compile_options(game PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${GAME_EXTRA_CXX_FLAGS}>)
+endif()
 
 SET_TARGET_PROPERTIES (game PROPERTIES FOLDER "Game Libs")
 
 target_link_libraries(game
   shared
   Detour
+  g3dlite
 )
 
 #add_dependencies(game revision.h)
@@ -585,15 +653,14 @@ if((${CMAKE_VERSION} VERSION_LESS "3.16") OR USE_PCH_OLD)
 else()
   if(USE_PCH)
       target_precompile_headers(game PRIVATE
-      Protocol/WorldSocket.h
+      Server/WorldSocket.h
       ../shared/Common.h
-
       Maps/MapManager.h
       ../shared/Log.h
       ObjectAccessor.h
       ObjectGuid.h
       Database/SQLStorages.h
-      Protocol/Opcodes.h
+      Server/Protocol/Opcodes.h
       SharedDefines.h
       Guild/GuildMgr.h
       ObjectMgr.h

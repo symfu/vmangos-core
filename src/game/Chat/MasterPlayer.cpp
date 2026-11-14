@@ -10,8 +10,7 @@
 #include "Opcodes.h"
 
 MasterPlayer::MasterPlayer(WorldSession* s):
-    m_speakTime(0), m_speakCount(0), m_social(nullptr), 
-    m_session(s), m_mailsUpdated(false)
+    m_session(s)
 {
 }
 
@@ -211,7 +210,7 @@ void MasterPlayer::AddNewMailDeliverTime(time_t deliver_time)
 
 
 // load mailed item which should receive current player
-void MasterPlayer::LoadMailedItems(QueryResult* result)
+void MasterPlayer::LoadMailedItems(std::unique_ptr<QueryResult> result)
 {
     // data needs to be at first place for Item::LoadFromDB
     // 0             1                  2      3         4        5      6             7                   8           9     10       11         12       13
@@ -231,11 +230,11 @@ void MasterPlayer::LoadMailedItems(QueryResult* result)
             continue;
         mail->AddItem(itemGuidLow, itemId);
 
-        ItemPrototype const* proto = ObjectMgr::GetItemPrototype(itemId);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
 
         if (!proto)
         {
-            sLog.outError("Player %u has unknown item Id (ProtoType) in mailed items (GUID: %u Id: %u) in mail (%u), deleted.", GetGUIDLow(), itemGuidLow, itemId, mail->messageID);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player %u has unknown item Id (ProtoType) in mailed items (GUID: %u Id: %u) in mail (%u), deleted.", GetGUIDLow(), itemGuidLow, itemId, mail->messageID);
             CharacterDatabase.PExecute("INSERT INTO `character_deleted_items` (`player_guid`, `item_id`, `stack_count`) VALUES ('%u', '%u', '%u')", GetGUIDLow(), itemId, fields[2].GetUInt32());
             CharacterDatabase.PExecute("DELETE FROM `mail_items` WHERE `item_guid` = '%u'", itemGuidLow);
             CharacterDatabase.PExecute("DELETE FROM `item_instance` WHERE `guid` = '%u'", itemGuidLow);
@@ -252,7 +251,7 @@ void MasterPlayer::LoadMailedItems(QueryResult* result)
 
         if (!item->LoadFromDB(itemGuidLow, GetObjectGuid(), fields, itemId))
         {
-            sLog.outError("Player::_LoadMailedItems - Item in mail (%u) doesn't exist !!!! - item guid: %u, deleted from mail", mail->messageID, itemGuidLow);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player::_LoadMailedItems - Item in mail (%u) doesn't exist !!!! - item guid: %u, deleted from mail", mail->messageID, itemGuidLow);
             CharacterDatabase.PExecute("DELETE FROM `mail_items` WHERE `item_guid` = '%u'", itemGuidLow);
             item->FSetState(ITEM_REMOVED);
             item->SaveToDB();                               // it also deletes item object !
@@ -264,7 +263,7 @@ void MasterPlayer::LoadMailedItems(QueryResult* result)
     while (result->NextRow());
 }
 
-void MasterPlayer::LoadMails(QueryResult* result)
+void MasterPlayer::LoadMails(std::unique_ptr<QueryResult> result)
 {
     m_mail.clear();
     Player* player = GetSession()->GetPlayer();
@@ -295,7 +294,7 @@ void MasterPlayer::LoadMails(QueryResult* result)
 
         if (m->mailTemplateId && !sMailTemplateStorage.LookupEntry<MailTemplateEntry>(m->mailTemplateId))
         {
-            sLog.outError("Player::_LoadMail - Mail (%u) have nonexistent MailTemplateId (%u), remove at load", m->messageID, m->mailTemplateId);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Player::_LoadMail - Mail (%u) have nonexistent MailTemplateId (%u), remove at load", m->messageID, m->mailTemplateId);
             m->mailTemplateId = 0;
         }
 
@@ -362,11 +361,11 @@ void MasterPlayer::removeActionButton(uint8 button)
         buttonItr->second.uState = ACTIONBUTTON_DELETED;    // saved, will deleted at next save
 }
 
-void MasterPlayer::LoadActions(QueryResult* result)
+void MasterPlayer::LoadActions(std::unique_ptr<QueryResult> result)
 {
     m_actionButtons.clear();
 
-    //QueryResult* result = CharacterDatabase.PQuery("SELECT button,action,type FROM character_action WHERE guid = '%u' ORDER BY button",GetGUIDLow());
+    //std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT button,action,type FROM character_action WHERE guid = '%u' ORDER BY button",GetGUIDLow());
 
     if (result)
     {
@@ -438,9 +437,9 @@ void MasterPlayer::SaveActions()
 }
 
 
-void MasterPlayer::LoadSocial(QueryResult* result)
+void MasterPlayer::LoadSocial(std::unique_ptr<QueryResult> result)
 {
-    m_social = sSocialMgr.LoadFromDB(result, GetObjectGuid());
+    m_social = sSocialMgr.LoadFromDB(std::move(result), GetObjectGuid());
     m_social->SetMasterPlayer(this);
 }
 

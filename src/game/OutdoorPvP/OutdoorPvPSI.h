@@ -19,6 +19,7 @@
 #define OUTDOOR_PVP_SI_
 
 #include "ZoneScript.h"
+#include "WorldStates.h"
 
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_11_2
 
@@ -45,13 +46,7 @@ uint32 const SI_TURNIN_QUEST_CM_A   = 17090;
 uint32 const SI_TURNIN_QUEST_CM_H   = 18199;
 uint32 const SI_SILITHYST_MOUND     = 181597;
 uint32 const SI_SILITHYST_GEYSER    = 181598;
-
-enum SI_WorldStates
-{
-    SI_GATHERED_A      = 2313,
-    SI_GATHERED_H      = 2314,
-    SI_SILITHYST_MAX   = 2317
-};
+uint32 const SI_DUST_BAG            = 181962;
 
 class OutdoorPvPSI : public OutdoorPvP
 {
@@ -59,29 +54,33 @@ class OutdoorPvPSI : public OutdoorPvP
 
         OutdoorPvPSI();
 
-        bool SetupZoneScript();
+        bool SetupZoneScript() override;
 
-        void OnPlayerEnter(Player* plr);
-        void OnPlayerLeave(Player* plr);
+        void OnPlayerEnter(Player* plr) override;
+        void OnPlayerLeave(Player* plr) override;
 
-        void Update(uint32 diff);
+        void Update(uint32 diff) override;
 
-        uint32 FillInitialWorldStates(WorldPacket& data);
+        void FillInitialWorldStates(std::vector<std::pair<uint32, int32>>& states) override;
 
-        void SendRemoveWorldStates(Player* plr);
+        void SendRemoveWorldStates(Player* plr) override;
 
-        bool HandleAreaTrigger(Player* plr, uint32 trigger);
+        bool HandleAreaTrigger(Player* plr, uint32 trigger) override;
 
-        bool HandleDropFlag(Player* plr, uint32 spellId);
+        bool HandleDropFlag(Player* plr, uint32 spellId) override;
 
         void UpdateWorldState();
 
-    private:
+        void ResetResourceCount();
 
+        void SpawnDustBags(uint32 resource, std::vector<uint32> const& allBags, std::set<uint32>& spawnedBags);
+
+    private:
+        std::set<uint32> m_allianceDustBags;
+        std::set<uint32> m_hordeDustBags;
         uint32 m_Gathered_A;
         uint32 m_Gathered_H;
         uint32 m_MaxRessources;
-
         uint32 m_LastController;
 };
 

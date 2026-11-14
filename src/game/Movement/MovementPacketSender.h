@@ -95,7 +95,7 @@ namespace MovementPacketSender
 
         /* teleport */
         void SendTeleportToController(Unit* unit, float x, float y, float z, float ang);
-        void SendTeleportToObservers(Unit* unit);
+        void SendTeleportToObservers(Unit* unit, float x, float y, float z, float ang);
 
         /* knockback */
         void SendKnockBackToController(Unit* unit, float vcos, float vsin, float speedXY, float speedZ);
@@ -106,6 +106,9 @@ namespace MovementPacketSender
         void SendMovementFlagChangeToController(Unit* unit, Player* mover, PlayerMovementPendingChange& pendingChange);
         void SendMovementFlagChangeToObservers(Unit* unit, MovementFlags mFlag, bool apply);
         void SendMovementFlagChangeToAll(Unit* unit, MovementFlags mFlag, bool apply);
+
+        /* run or walk*/
+        void SendToggleRunWalkToAll(Unit* unit, bool run);
 
         // utility method
         MovementChangeType GetChangeTypeByMoveType(UnitMoveType moveType);

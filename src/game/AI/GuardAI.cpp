@@ -70,7 +70,7 @@ void GuardAI::MoveInLineOfSight(Unit* pWho)
                 attackRadius = 30.0f;
     }
 
-    if (!m_creature->IsWithinDistInMap(pWho, attackRadius, true, false))
+    if (!m_creature->IsWithinDistInMap(pWho, attackRadius, true, SizeFactor::None))
         return;
 
     if (m_creature->CanInitiateAttack() && m_creature->IsValidAttackTarget(pWho) &&
@@ -79,11 +79,6 @@ void GuardAI::MoveInLineOfSight(Unit* pWho)
     {
         AttackStart(pWho);
     }
-}
-
-void GuardAI::EnterCombat(Unit*)
-{
-    m_creature->CallForHelp(30.0f);
 }
 
 void GuardAI::UpdateAI(uint32 const uiDiff)
@@ -97,18 +92,3 @@ void GuardAI::UpdateAI(uint32 const uiDiff)
     DoMeleeAttackIfReady();
 }
 
-void GuardAI::AttackStart(Unit* pWho)
-{
-    if (!pWho)
-        return;
-
-    if (m_creature->Attack(pWho, m_bMeleeAttack))
-    {
-        m_creature->AddThreat(pWho);
-        m_creature->SetInCombatWith(pWho);
-        pWho->SetInCombatWith(m_creature);
-
-        if (m_bCombatMovement)
-            m_creature->GetMotionMaster()->MoveChase(pWho);
-    }
-}

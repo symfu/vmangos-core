@@ -19,10 +19,13 @@
 
 #include "Object.h"
 #include "SpellDefines.h"
+#include "DamageStructs.h"
 #include "Utilities/EventProcessor.h"
 #include "nonstd/optional.hpp"
 #include <array>
 #include <memory>
+
+#include "SpellEntry.h"
 
 using nonstd::optional;
 
@@ -34,54 +37,6 @@ class Spell;
 class SpellCaster;
 class SpellEntry;
 struct ItemPrototype;
-
-// At least some values expected fixed and used in auras field, other custom
-enum MeleeHitOutcome
-{
-    MELEE_HIT_EVADE = 0,
-    MELEE_HIT_MISS = 1,
-    MELEE_HIT_DODGE = 2,                                // used as misc in SPELL_AURA_IGNORE_COMBAT_RESULT
-    MELEE_HIT_BLOCK = 3,                                // used as misc in SPELL_AURA_IGNORE_COMBAT_RESULT
-    MELEE_HIT_PARRY = 4,                                // used as misc in SPELL_AURA_IGNORE_COMBAT_RESULT
-    MELEE_HIT_GLANCING = 5,
-    MELEE_HIT_CRIT = 6,
-    MELEE_HIT_CRUSHING = 7,
-    MELEE_HIT_NORMAL = 8,
-    MELEE_HIT_BLOCK_CRIT = 9,
-};
-
-// Spell damage info structure based on structure sending in SMSG_SPELLNONMELEEDAMAGELOG opcode
-struct SpellNonMeleeDamage {
-    SpellNonMeleeDamage(SpellCaster* _attacker, Unit* _target, uint32 _SpellID, SpellSchools _school)
-        : target(_target), attacker(_attacker), SpellID(_SpellID), damage(0), school(_school),
-        absorb(0), resist(0), periodicLog(false), unused(false), blocked(0), HitInfo(0), spell(nullptr)
-    {}
-
-    Unit* target;
-    SpellCaster* attacker;
-    uint32 SpellID;
-    uint32 damage;
-    SpellSchools school;
-    uint32 absorb;
-    int32 resist;
-    bool   periodicLog;
-    bool   unused;
-    uint32 blocked;
-    uint32 HitInfo;
-    Spell* spell;
-};
-
-struct CleanDamage
-{
-    CleanDamage(uint32 _damage, WeaponAttackType _attackType, MeleeHitOutcome _hitOutCome, uint32 _Absorb, int32 _Resist) :
-    damage(_damage), attackType(_attackType), hitOutCome(_hitOutCome), absorb(_Absorb), resist(_Resist) {}
-
-    uint32 damage;
-    WeaponAttackType attackType;
-    MeleeHitOutcome hitOutCome;
-    uint32 absorb;
-    int32 resist;
-};
 
 enum CurrentSpellTypes
 {
@@ -98,8 +53,8 @@ class CooldownData
 {
         friend class CooldownContainer;
     public:
-        CooldownData(TimePoint clockNow, uint32 spellId, uint32 duration, uint32 spellCategory, uint32 categoryDuration, uint32 itemId = 0, bool isPermanent = false) :
-            m_spellId(spellId),
+        CooldownData(TimePoint clockNow, SpellEntry const* spellEntry, uint32 duration, uint32 spellCategory, uint32 categoryDuration, uint32 itemId = 0, bool isPermanent = false) :
+            m_spellEntry(spellEntry),
             m_category(spellCategory),
             m_expireTime(duration ? std::chrono::milliseconds(duration) + clockNow : TimePoint()),
             m_catExpireTime(spellCategory && categoryDuration ? std::chrono::milliseconds(categoryDuration) + clockNow : TimePoint()),
@@ -115,6 +70,11 @@ class CooldownData
 
             expireTime = m_expireTime;
             return true;
+        }
+
+        void SetCatCDExpireTime(TimePoint expireTime)
+        {
+            m_catExpireTime = expireTime;
         }
 
         // return false if permanent
@@ -151,11 +111,11 @@ class CooldownData
 
         bool IsPermanent() const { return m_typePermanent; }
         uint32 GetItemId() const { return m_itemId; }
-        uint32 GetSpellId() const { return m_spellId; }
+        SpellEntry const* GetSpellEntry() const { return m_spellEntry; }
         uint32 GetCategory() const { return m_category; }
 
     private:
-        uint32            m_spellId;
+        SpellEntry const* m_spellEntry;
         uint32            m_category;
         TimePoint         m_expireTime;
         TimePoint         m_catExpireTime;
@@ -186,17 +146,38 @@ class CooldownContainer
                 else
                 {
                     if (cd->m_category && cd->IsCatCDExpired(now))
+                    {
                         m_categoryMap.erase(cd->m_category);
+                        cd->m_category = 0;
+                    }
                     ++spellCDItr;
                 }
             }
         }
 
-        bool AddCooldown(TimePoint clockNow, uint32 spellId, uint32 duration, uint32 spellCategory = 0, uint32 categoryDuration = 0, uint32 itemId = 0, bool onHold = false)
+        bool AddCooldown(TimePoint clockNow, SpellEntry const* spellEntry, uint32 duration, uint32 spellCategory = 0, uint32 categoryDuration = 0, uint32 itemId = 0, bool onHold = false)
         {
-            auto resultItr = m_spellIdMap.emplace(spellId, std::unique_ptr<CooldownData>(new CooldownData(clockNow, spellId, duration, spellCategory, categoryDuration, itemId, onHold)));
+            RemoveBySpellId(spellEntry->Id);
+            auto resultItr = m_spellIdMap.emplace(spellEntry->Id, std::make_unique<CooldownData>(clockNow, spellEntry, duration, spellCategory, categoryDuration, itemId, onHold));
+            // do not overwrite one permanent category cooldown with another permanent category cooldown
             if (resultItr.second && spellCategory && categoryDuration)
-                m_categoryMap.emplace(spellCategory, resultItr.first);
+            {
+                auto catItr = FindByCategory(spellCategory);
+                if (!onHold || catItr == m_spellIdMap.end() || !catItr->second->IsPermanent())
+                {
+                    // we must keep original category cd owner for sake of client sync
+                    if (catItr != m_spellIdMap.end())
+                    {
+                        catItr->second->SetCatCDExpireTime(std::chrono::milliseconds(categoryDuration) + clockNow);
+                        catItr->second->m_typePermanent = false;
+                        resultItr.first->second->m_category = 0;
+                    }
+                    else
+                        m_categoryMap.emplace(spellCategory, resultItr.first);
+                }
+                else
+                    resultItr.first->second->m_category = 0;
+            }
 
             return resultItr.second;
         }
@@ -221,7 +202,10 @@ class CooldownContainer
         {
             auto spellCDItr = m_categoryMap.find(category);
             if (spellCDItr != m_categoryMap.end())
+            {
+                spellCDItr->second->second->m_category = 0;
                 m_categoryMap.erase(spellCDItr);
+            }
         }
 
         Iterator erase(ConstIterator spellCDItr)
@@ -270,14 +254,25 @@ struct ProcSystemArguments
     uint32 procExtra;
 
     uint32 amount; // contains full heal or full damage
+    uint32 originalAmount; // before resist and absorb
     SpellEntry const* procSpell;
     WeaponAttackType attType;
 
     std::list<SpellModifier*> appliedSpellModifiers; // don't dereference pointers
-    bool isSpellTriggeredByAura;
+    bool isSpellTriggeredByAuraOrItem;
+    time_t procTime;
 
-    explicit ProcSystemArguments(Unit* pVictim_, uint32 procFlagsAttacker_, uint32 procFlagsVictim_, uint32 procExtra_, uint32 amount_, WeaponAttackType attType_ = BASE_ATTACK,
+    explicit ProcSystemArguments(Unit* pVictim_, uint32 procFlagsAttacker_, uint32 procFlagsVictim_, uint32 procExtra_, uint32 amount_, uint32 originalAmount_, WeaponAttackType attType_ = BASE_ATTACK,
         SpellEntry const* procSpell_ = nullptr, Spell const* spell = nullptr);
+};
+
+// Needed because of SPELL_ATTR_EX3_INSTANT_TARGET_PROCS
+// We need to call ProcDamageAndSpell twice
+enum ProcessProcsAuraType
+{
+    PROC_PROCESS_INSTANT,
+    PROC_PROCESS_DELAYED,
+    PROC_PROCESS_ALL
 };
 
 // Intermediary absract class to hold all the common spell casting method between Units and GameObjects.
@@ -300,6 +295,7 @@ public:
     SpellCastResult CastSpell(float x, float y, float z, SpellEntry const* spellInfo, bool triggered, Item* castItem = nullptr, Aura* triggeredByAura = nullptr, ObjectGuid originalCaster = ObjectGuid(), SpellEntry const* triggeredBy = nullptr);
 
     void SetCurrentCastedSpell(Spell* pSpell);
+    void MoveChannelledSpellWithCastTime(Spell* pSpell);
     Spell* GetCurrentSpell(CurrentSpellTypes spellType) const { return m_currentSpells[spellType]; }
     Spell* FindCurrentSpellBySpellId(uint32 spell_id) const;
     bool CheckAndIncreaseCastCounter();
@@ -323,63 +319,66 @@ public:
 
     virtual bool IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType = BASE_ATTACK, Spell* spell = nullptr) const { return false; }
     float SpellCriticalHealingBonus(SpellEntry const* spellProto, uint32 damage, Unit const* pVictim) const;
-    uint32 SpellCriticalDamageBonus(SpellEntry const* spellProto, uint32 damage, Unit* pVictim, Spell* spell = nullptr);
-    float  MeleeSpellMissChance(Unit* pVictim, WeaponAttackType attType, int32 skillDiff, SpellEntry const* spell, Spell* spellPtr = nullptr);
-    SpellMissInfo MeleeSpellHitResult(Unit* pVictim, SpellEntry const* spell, Spell* spellPtr = nullptr);
-    SpellMissInfo MagicSpellHitResult(Unit* pVictim, SpellEntry const* spell, Spell* spellPtr = nullptr);
-    int32 MagicSpellHitChance(Unit* pVictim, SpellEntry const* spell, Spell* spellPtr = nullptr);
+    uint32 SpellCriticalDamageBonus(SpellEntry const* spellProto, uint32 damage, Unit const* pVictim, Spell* spell = nullptr);
+    float GetMeleeMissChance(Unit const* pVictim, WeaponAttackType attType, int32 skillDiff, SpellEntry const* pSpellEntry, Spell* pSpell = nullptr) const;
+    void RollMeleeOutcomeAgainst(MeleeHitOutcome& outHitOutcome, uint32& outHitInfo, Unit const* pVictim, WeaponAttackType attType, SpellEntry const* pSpellEntry = nullptr, Spell* pSpell = nullptr) const;
+    SpellMissInfo MeleeSpellHitResult(Unit const* pVictim, SpellEntry const* pSpellEntry, Spell* pSpell = nullptr, nonstd::optional<bool>* pIsCrit = nullptr, uint32* pMeleeHitInfo = nullptr);
+    SpellMissInfo MagicSpellHitResult(Unit const* pVictim, SpellEntry const* pSpellEntry, Spell* pSpell = nullptr);
+    int32 MagicSpellHitChance(Unit const* pVictim, SpellEntry const* pSpellEntry, Spell* pSpell = nullptr);
     float GetSpellResistChance(Unit const* victim, uint32 schoolMask, bool innateResists) const;
-    SpellMissInfo SpellHitResult(Unit* pVictim, SpellEntry const* spell, SpellEffectIndex effIndex, bool canReflect = false, Spell* spellPtr = nullptr);
+    SpellMissInfo SpellHitResult(Unit* pVictim, SpellEntry const* pSpellEntry, SpellEffectIndex effIndex, bool canReflect = false, Spell* pSpell = nullptr, nonstd::optional<bool>* pIsCrit = nullptr, uint32* pMeleeHitInfo = nullptr);
     void UpdatePendingProcs(uint32 diff);
     void ProcDamageAndSpell(ProcSystemArguments&& data);
-    void ProcDamageAndSpell_real(ProcSystemArguments& data);
+    void ProcDamageAndSpell_real(ProcSystemArguments& data, ProcessProcsAuraType processAurasType);
     void ProcDamageAndSpell_delayed(ProcSystemArguments& data);
     void CalculateSpellDamage(SpellNonMeleeDamage* damageInfo, float damage, SpellEntry const* spellInfo, SpellEffectIndex effectIndex, WeaponAttackType attackType, Spell* spell, bool crit);
     float CalculateSpellEffectValue(Unit const* target, SpellEntry const* spellProto, SpellEffectIndex effect_index, int32 const* basePoints = nullptr, Spell* spell = nullptr) const;
-    float SpellBonusWithCoeffs(SpellEntry const* spellProto, SpellEffectIndex effectIndex, float total, float benefit, float ap_benefit, DamageEffectType damagetype, bool donePart, SpellCaster* pCaster, Spell* spell = nullptr) const;
+    float SpellBonusWithCoeffs(SpellEntry const* spellProto, SpellEffectIndex effectIndex, float total, float benefit, DamageEffectType damagetype, bool donePart, SpellCaster const* pCaster, Spell* spell = nullptr) const;
     static float CalculateLevelPenalty(SpellEntry const* spellProto);
-    float SpellDamageBonusDone(Unit* pVictim, SpellEntry const* spellProto, SpellEffectIndex effectIndex, float pdamage, DamageEffectType damagetype, uint32 stack = 1, Spell* spell = nullptr);
+    float SpellDamageBonusDone(Unit const* pVictim, SpellEntry const* spellProto, SpellEffectIndex effectIndex, float pdamage, DamageEffectType damagetype, uint32 stack = 1, Spell* spell = nullptr);
     int32 SpellBaseDamageBonusDone(SpellSchoolMask schoolMask);
-    float SpellHealingBonusDone(Unit* pVictim, SpellEntry const* spellProto, SpellEffectIndex effectIndex, float healamount, DamageEffectType damagetype, uint32 stack = 1, Spell* spell = nullptr);
+    float SpellHealingBonusDone(Unit const* pVictim, SpellEntry const* spellProto, SpellEffectIndex effectIndex, float healamount, DamageEffectType damagetype, uint32 stack = 1, Spell* spell = nullptr);
     float SpellBaseHealingBonusDone(SpellSchoolMask schoolMask);
-    float CalcArmorReducedDamage(Unit* pVictim, uint32 const damage) const;
-    float MeleeDamageBonusDone(Unit* pVictim, float damage, WeaponAttackType attType, SpellEntry const* spellProto = nullptr, SpellEffectIndex effectIndex = EFFECT_INDEX_0, DamageEffectType damagetype = DIRECT_DAMAGE, uint32 stack = 1, Spell* spell = nullptr, bool flat = true);
+    float CalcArmorReducedDamage(Unit const* pVictim, uint32 const damage) const;
+    float MeleeDamageBonusDone(Unit const* pVictim, float damage, WeaponAttackType attType, SpellEntry const* spellProto = nullptr, SpellEffectIndex effectIndex = EFFECT_INDEX_0, DamageEffectType damagetype = DIRECT_DAMAGE, uint32 stack = 1, Spell* spell = nullptr, bool flat = true);
     virtual SpellSchoolMask GetMeleeDamageSchoolMask() const;
     float GetAPMultiplier(WeaponAttackType attType, bool normalized) const;
-    virtual uint32 DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask, SpellEntry const* spellProto, bool durabilityLoss, Spell* spell = nullptr);
+    virtual uint32 DealDamage(Unit* pVictim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask, SpellEntry const* spellProto, bool durabilityLoss, Spell* spell = nullptr, bool reflected = false);
     void DealDamageMods(Unit* pVictim, uint32& damage, uint32* absorb);
     void DealSpellDamage(SpellNonMeleeDamage* damageInfo, bool durabilityLoss);
-    void SendSpellNonMeleeDamageLog(SpellNonMeleeDamage* log);
-    void SendSpellNonMeleeDamageLog(Unit* target, uint32 spellId, uint32 damage, SpellSchoolMask damageSchoolMask, uint32 absorbedDamage, int32 resist, bool isPeriodic, uint32 blocked, bool criticalHit = false, bool split = false);
-    void SendSpellMiss(Unit* target, uint32 spellId, SpellMissInfo missInfo);
-    void SendSpellOrDamageImmune(Unit* target, uint32 spellId) const;
+    void SendSpellNonMeleeDamageLog(SpellNonMeleeDamage const* log) const;
+    void SendSpellNonMeleeDamageLog(Unit const* target, uint32 spellId, uint32 damage, SpellSchoolMask damageSchoolMask, uint32 absorbedDamage, int32 resist, bool isPeriodic, uint32 blocked, bool criticalHit = false, bool split = false) const;
+    void SendSpellMiss(Unit const* target, uint32 spellId, SpellMissInfo missInfo) const;
+    void SendSpellDamageResist(Unit const* target, uint32 spellId) const;
+    void SendSpellOrDamageImmune(Unit const* target, uint32 spellId) const;
     int32 DealHeal(Unit* pVictim, uint32 addhealth, SpellEntry const* spellProto, bool critical = false);
-    void SendHealSpellLog(Unit const* pVictim, uint32 SpellID, uint32 Damage, bool critical = false) const;
-    void EnergizeBySpell(Unit* pVictim, uint32 SpellID, uint32 Damage, Powers powertype);
-    void SendEnergizeSpellLog(Unit const* pVictim, uint32 SpellID, uint32 Damage, Powers powertype) const;
+    void SendHealSpellLog(Unit const* pTarget, uint32 spellId, uint32 amount, bool critical = false) const;
+    void EnergizeBySpell(Unit* pTarget, uint32 spellId, uint32 amount, Powers powertype);
+    void SendEnergizeSpellLog(Unit const* pTarget, uint32 spellId, uint32 amount, Powers powertype) const;
 
-    void GetDynObjects(uint32 spellId, SpellEffectIndex effectIndex, std::vector<DynamicObject*>& dynObjsOut);
-    DynamicObject* GetDynObject(uint32 spellId, SpellEffectIndex effIndex);
-    DynamicObject* GetDynObject(uint32 spellId);
+    void GetDynObjects(uint32 spellId, SpellEffectIndex effectIndex, std::vector<DynamicObject*>& dynObjsOut) const;
+    DynamicObject* GetDynObject(uint32 spellId, SpellEffectIndex effIndex) const;
+    DynamicObject* GetDynObject(uint32 spellId) const;
     void AddDynObject(DynamicObject* dynObj);
     void RemoveDynObject(uint32 spellid);
-    void RemoveDynObjectWithGUID(ObjectGuid guid) { m_dynObjGUIDs.remove(guid); }
+    void RemoveDynObjectWithGUID(ObjectGuid guid);
     void RemoveAllDynObjects();
 
     // cooldown system
-    virtual void AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration = 0, bool updateClient = false);
+    virtual void AddGCD(SpellEntry const* spellEntry, uint32 forcedDuration = 0, bool updateClient = false);
     virtual bool HasGCD(SpellEntry const* spellEntry) const;
     void ResetGCD(SpellEntry const* spellEntry = nullptr);
-    virtual void AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0);
-    virtual void RemoveSpellCooldown(SpellEntry const& spellEntry, bool updateClient = true);
-    void RemoveSpellCooldown(uint32 spellId, bool updateClient = true);
+    virtual void AddCooldown(SpellEntry const* spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0);
+    virtual void RemoveSpellCooldown(SpellEntry const* spellEntry, bool updateClient = true);
     virtual void RemoveSpellCategoryCooldown(uint32 category, bool updateClient = true);
     virtual void RemoveAllCooldowns(bool /*sendOnly*/ = false) { m_GCDCatMap.clear(); m_cooldownMap.clear(); m_lockoutMap.clear(); }
-    bool IsSpellReady(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr) const;
-    bool IsSpellReady(uint32 spellId, ItemPrototype const* itemProto = nullptr) const;
+    bool IsSpellReady(SpellEntry const* spellEntry, ItemPrototype const* itemProto = nullptr) const;
+    bool IsSpellOnPermanentCooldown(SpellEntry const* spellEntry) const;
     virtual void LockOutSpells(SpellSchoolMask schoolMask, uint32 duration);
     void PrintCooldownList(ChatHandler& chat) const;
     bool CheckLockout(SpellSchoolMask schoolMask) const;
+    void UpdateCooldowns(TimePoint const& now);
+    CooldownContainer const& GetCooldownMap() const { return m_cooldownMap; };
 
     // Event handler
     EventProcessor m_Events;
@@ -387,15 +386,13 @@ protected:
     explicit SpellCaster() = default;
 
     // cooldown system
-    void UpdateCooldowns(TimePoint const& now);
-    bool GetExpireTime(SpellEntry const& spellEntry, TimePoint& expireTime, bool& isPermanent) const;
+    bool GetExpireTime(SpellEntry const* spellEntry, TimePoint& expireTime, bool& isPermanent) const;
 
     GCDMap            m_GCDCatMap;
     LockoutMap        m_lockoutMap;
     CooldownContainer m_cooldownMap;
 
-    typedef std::list<ObjectGuid> DynObjectGUIDs;
-    DynObjectGUIDs m_dynObjGUIDs;
+    std::vector<ObjectGuid> m_spellDynObjects;
 
     uint32 m_procsUpdateTimer = 0;
     std::vector<ProcSystemArguments> m_pendingProcChecks;

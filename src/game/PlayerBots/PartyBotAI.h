@@ -21,13 +21,6 @@
 #include "Group.h"
 #include "ObjectAccessor.h"
 
-struct LootResponseData
-{
-    LootResponseData(uint64 guid_, uint32 slot_) : guid(guid_), slot(slot_) {}
-    uint64 guid = 0;
-    uint32 slot = 0;
-};
-
 class PartyBotAI : public CombatBotBaseAI
 {
 public:
@@ -40,15 +33,18 @@ public:
         m_cloneGuid = pClone ? pClone->GetObjectGuid() : ObjectGuid();
         m_updateTimer.Reset(2000);
     }
-    bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) override
+    PartyBotAI(Player* pLeader, uint32 mapId, uint32 instanceId, float x, float y, float z, float o)
+        : CombatBotBaseAI(), m_mapId(mapId), m_instanceId(instanceId), m_x(x), m_y(y), m_z(z), m_o(o)
     {
-        return SpawnNewPlayer(sess, m_class, m_race, m_mapId, m_instanceId, m_x, m_y, m_z, m_o, sObjectAccessor.FindPlayer(m_cloneGuid));
+        m_role = ROLE_INVALID;
+        m_leaderGuid = pLeader->GetObjectGuid();
+        m_updateTimer.Reset(2000);
     }
 
+    bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
     void OnPlayerLogin() final;
     void UpdateAI(uint32 const diff) final;
     void OnPacketReceived(WorldPacket const* packet) final;
-    void SendFakePacket(uint16 opcode) final;
 
     void CloneFromPlayer(Player const* pPlayer);
     void AddToPlayerGroup();
@@ -64,12 +60,15 @@ public:
     bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
     bool DrinkAndEat();
     bool ShouldAutoRevive() const;
-    bool RunAwayFromTarget(Unit* pTarget);
+    bool IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy);
+    Unit* GetDistancingTarget(Unit* pEnemy);
+    bool RunAwayFromTarget(Unit* pEnemy);
     bool CrowdControlMarkedTargets();
     bool EnterCombatDruidForm();
     bool ShouldEnterStealth() const;
     bool EnterStealthIfNeeded(SpellEntry const* pStealthSpell);
 
+    bool CheckForDispelTargets();
     void UpdateInCombatAI() final;
     void UpdateOutOfCombatAI() final;
     void UpdateInCombatAI_Paladin() final;
@@ -91,7 +90,6 @@ public:
     void UpdateInCombatAI_Druid() final;
     void UpdateOutOfCombatAI_Druid() final;
 
-    std::vector<LootResponseData> m_lootResponses;
     std::vector<RaidTargetIcon> m_marksToCC;
     std::vector<RaidTargetIcon> m_marksToFocus;
     ShortTimeTracker m_updateTimer;

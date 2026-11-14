@@ -39,7 +39,7 @@ DynamicObject::DynamicObject() : WorldObject(), m_spellId(0), m_effIndex(EFFECT_
 
 void DynamicObject::AddToWorld()
 {
-    ///- Register the dynamicObject for guid lookup
+    // Register the dynamicObject for guid lookup
     if (!IsInWorld())
         GetMap()->InsertObject<DynamicObject>(GetObjectGuid(), this);
 
@@ -48,7 +48,7 @@ void DynamicObject::AddToWorld()
 
 void DynamicObject::RemoveFromWorld()
 {
-    ///- Remove the dynamicObject from the accessor
+    // Remove the dynamicObject from the accessor
     if (IsInWorld())
     {
         GetMap()->EraseObject<DynamicObject>(GetObjectGuid());
@@ -66,7 +66,7 @@ bool DynamicObject::Create(uint32 guidlow, WorldObject* caster, uint32 spellId, 
 
     if (!IsPositionValid())
     {
-        sLog.outError("DynamicObject (spell %u eff %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spellId, effIndex, GetPositionX(), GetPositionY());
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "DynamicObject (spell %u eff %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spellId, effIndex, GetPositionX(), GetPositionY());
         return false;
     }
 
@@ -107,7 +107,7 @@ bool DynamicObject::Create(uint32 guidlow, WorldObject* caster, uint32 spellId, 
     SpellEntry const* spellProto = sSpellMgr.GetSpellEntry(spellId);
     if (!spellProto)
     {
-        sLog.outError("DynamicObject (spell %u) not created. Spell not exist!", spellId, GetPositionX(), GetPositionY());
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "DynamicObject (spell %u) not created. Spell not exist! Position: X: %f, Y: %f", spellId, GetPositionX(), GetPositionY());
         return false;
     }
 
@@ -117,6 +117,9 @@ bool DynamicObject::Create(uint32 guidlow, WorldObject* caster, uint32 spellId, 
     m_spellId = spellId;
     m_positive = spellProto->IsPositiveEffect(m_effIndex);
     m_channeled = spellProto->IsChanneledSpell();
+
+    if (type == DYNAMIC_OBJECT_FARSIGHT_FOCUS)
+        m_isActiveObject = true;
 
     return true;
 }
@@ -155,6 +158,11 @@ Unit* DynamicObject::GetUnitCaster() const
     return nullptr;
 }
 
+Player* DynamicObject::GetAffectingPlayer() const
+{
+    return ::ToPlayer(GetUnitCaster());
+}
+
 uint32 DynamicObject::GetFactionTemplateId() const
 {
     return GetCaster()->GetFactionTemplateId();
@@ -171,7 +179,7 @@ void DynamicObject::Update(uint32 update_diff, uint32 p_time)
         return;
     }
 
-    if (_deleted)
+    if (m_deleted)
         return;
 
     // If this object is from the current channeled spell, do not delete it. Otherwise

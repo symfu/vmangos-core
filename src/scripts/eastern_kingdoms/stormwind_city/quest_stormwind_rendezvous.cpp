@@ -54,6 +54,8 @@ void npc_reginald_windsorAI::ResetCreature()
 
     for (uint64 & guid : DragsGUIDs)
         guid = 0;
+
+    m_creature->EnableMoveInLosEvent();
 }
 
 void npc_reginald_windsorAI::JustDied(Unit* /*pKiller*/)
@@ -195,7 +197,7 @@ uint32 GetRandomGuardText()
         case 6:
             return 8183; // ...nerves of thorium.
     }
-    return 8184; // A living legend... 
+    return 8184; // A living legend...
 }
 
 void npc_reginald_windsorAI::MoveInLineOfSight(Unit* Victim)
@@ -597,7 +599,7 @@ void npc_reginald_windsorAI::UpdateAI(uint32 const uiDiff)
             if (Creature* Onyxia = m_creature->FindNearestCreature(NPC_KATRANA_PRESTOR, 150.0f))
             {
                 Onyxia->UpdateEntry(NPC_LADY_ONYXIA);
-                Onyxia->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
+                Onyxia->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING | UNIT_FLAG_IMMUNE_TO_NPC);
             }
             Timer = 1000;
             break;
@@ -640,7 +642,7 @@ void npc_reginald_windsorAI::UpdateAI(uint32 const uiDiff)
                     DragsGUIDs[Var] = itr->GetGUID();
                     itr->UpdateEntry(NPC_ONYXIA_ELITE_GUARD);
                     itr->AIM_Initialize();
-                    itr->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    itr->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
                     if (!urand(0, 2))
                         DoScriptText(SAY_HISS, itr);
                     Var++;
@@ -671,7 +673,7 @@ void npc_reginald_windsorAI::UpdateAI(uint32 const uiDiff)
                     {
                         if (Creature* crea = me->GetMap()->GetCreature(DragsGUIDs[Var]))
                         {
-                            crea->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                            crea->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
                             crea->GetThreatManager().addThreatDirectly(Bolvar, 5000.0f);
                             crea->SetTargetGuid(Bolvar->GetGUID());
                             Bolvar->AddThreat(crea);
@@ -917,7 +919,7 @@ void npc_squire_roweAI::UpdateAI(uint32 const uiDiff)
                     WindsorSummon.x,
                     WindsorSummon.y,
                     WindsorSummon.z,
-                    WindsorSummon.o, TEMPSUMMON_MANUAL_DESPAWN, 1.5 * HOUR * IN_MILLISECONDS, true))
+                    WindsorSummon.o, TEMPSUMMON_MANUAL_DESPAWN, 90 * MINUTE * IN_MILLISECONDS, true))
                 {
                     auto pWindsorAI = static_cast<npc_reginald_windsorAI*>(pWindsor->AI());
 
@@ -1034,7 +1036,7 @@ bool AreaTrigger_at_stormwind_gates(Player* pPlayer, AreaTriggerEntry const* /*p
         WindsorSummon.x,
         WindsorSummon.y,
         WindsorSummon.z,
-        WindsorSummon.o, TEMPSUMMON_MANUAL_DESPAWN, 1.5 * HOUR * IN_MILLISECONDS, true))
+        WindsorSummon.o, TEMPSUMMON_MANUAL_DESPAWN, 90 * MINUTE * IN_MILLISECONDS, true))
     {
         auto pWindsorAI = static_cast<npc_reginald_windsorAI*>(pWindsor->AI());
 

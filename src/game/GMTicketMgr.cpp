@@ -30,7 +30,7 @@
 #include "Player.h"
 #include "ObjectMgr.h"
 
-inline float GetAge(uint64 t) { return float(time(nullptr) - t) / DAY; }
+inline float GetAge(uint64 t) { return float(time(nullptr) - t) / float(DAY); }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // GM ticket
@@ -117,9 +117,10 @@ void GmTicket::DeleteFromDB()
     stmt.Execute();
 }
 
-void GmTicket::WritePacket(WorldPacket& data) const
+void GmTicket::FillPacket(WorldPackets::GmTicket::GmTicketGetTicket& packet) const
 {
-    data << uint32(GMTICKET_STATUS_HASTEXT);
+    packet.status = GMTICKET_STATUS_HASTEXT;
+
     std::stringstream displayedMessage;
     displayedMessage << m_message;
     if (IsCompleted())
@@ -132,28 +133,28 @@ void GmTicket::WritePacket(WorldPacket& data) const
             displayedMessage << m_response;
         }
     }
-    data << displayedMessage.str();
-    data << uint8(m_ticketType);
-    data << GetAge(m_lastModifiedTime);
+    packet.message = displayedMessage.str();
+    packet.ticketType = static_cast<uint8>(m_ticketType);
+    packet.lastModifiedAge = GetAge(m_lastModifiedTime);
     if (GmTicket* ticket = sTicketMgr->GetOldestOpenTicket())
-        data << GetAge(ticket->GetLastModifiedTime());
+        packet.oldestTicketAge = GetAge(ticket->GetLastModifiedTime());
     else
-        data << float(0);
+        packet.oldestTicketAge = 0.0f;
 
     // I am not sure how blizzlike this is, and we don't really have a way to find out
-    data << GetAge(sTicketMgr->GetLastChange());         // Estimated wait time ?
+    packet.estimatedWaitTime = GetAge(sTicketMgr->GetLastChange()); // Estimated wait time ?
 
     GMTicketEscalationStatus escStatus = std::min(m_escalatedStatus, TICKET_IN_ESCALATION_QUEUE);
     GMTicketOpenedByGMStatus openedStatus = m_viewed ? GMTICKET_OPENEDBYGM_STATUS_OPENED : GMTICKET_OPENEDBYGM_STATUS_NOT_OPENED;
-    data << uint8(escStatus);                              // escalated data
-    data << uint8(openedStatus); // whether or not it has been viewed
+    packet.escalationStatus = static_cast<uint8>(escStatus);  // escalated data
+    packet.openedByGMStatus = static_cast<uint8>(openedStatus); // whether or not it has been viewed
 }
 
 void GmTicket::SendResponse(WorldSession* session) const
 {
-    WorldPacket data(SMSG_GMTICKET_GETTICKET, (4 + 4 + 1 + 4 + 4 + 4 + 1 + 1));
-    WritePacket(data);
-    session->SendPacket(&data);
+    auto packet = std::make_unique<WorldPackets::GmTicket::GmTicketGetTicket>();
+    FillPacket(*packet);
+    session->SendPacket(std::move(packet));
     ChatHandler(session).SendSysMessage(LANG_YOUR_TICKET_RESPONDED);
 }
 
@@ -343,10 +344,10 @@ void TicketMgr::LoadTickets()
     _lastTicketId = 0;
     _openTicketCount = 0;
 
-    QueryResult* result = CharacterDatabase.Query("SELECT " TICKET_TABLE_FIELDS " FROM `gm_tickets`");
+    std::unique_ptr<QueryResult> result = CharacterDatabase.Query("SELECT " TICKET_TABLE_FIELDS " FROM `gm_tickets`");
     if (!result)
     {
-        sLog.outString(">> Loaded 0 GM tickets. DB table `gm_ticket` is empty!");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 GM tickets. DB table `gm_ticket` is empty!");
         return;
     }
 
@@ -371,9 +372,8 @@ void TicketMgr::LoadTickets()
         _ticketList[id] = ticket;
         ++count;
     } while (result->NextRow());
-    delete result;
 
-    sLog.outString(">> Loaded %u GM tickets in %u ms", count, WorldTimer::getMSTimeDiffToNow(oldMSTime));
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u GM tickets in %u ms", count, WorldTimer::getMSTimeDiffToNow(oldMSTime));
 }
 
 void TicketMgr::LoadSurveys()
@@ -382,13 +382,31 @@ void TicketMgr::LoadSurveys()
     _lastSurveyId = 0;
 
     uint32 oldMSTime = WorldTimer::getMSTime();
-    if (QueryResult* result = CharacterDatabase.Query("SELECT MAX(`survey_id`) FROM `gm_surveys`"))
+    if (std::unique_ptr<QueryResult> result = CharacterDatabase.Query("SELECT MAX(`survey_id`) FROM `gm_surveys`"))
     {
         _lastSurveyId = (*result)[0].GetUInt32();
-        delete result;
     }
 
-    sLog.outString(">> Loaded GM Survey count from database in %u ms", WorldTimer::getMSTimeDiffToNow(oldMSTime));
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded GM Survey count from database in %u ms", WorldTimer::getMSTimeDiffToNow(oldMSTime));
+}
+
+void TicketMgr::RemovePlayerReferences(ObjectGuid playerGuid)
+{
+    std::vector<uint32> authored;
+    for (auto& entry : _ticketList)
+    {
+        GmTicket* ticket = entry.second;
+        if (ticket->IsFromPlayer(playerGuid))
+            authored.push_back(ticket->GetId());
+        else if (ticket->GetAssignedToGUID() == playerGuid)
+        {
+            ticket->SetUnassigned();
+            ticket->SaveToDB();
+        }
+    }
+
+    for (uint32 ticketId : authored)
+        RemoveTicket(ticketId);
 }
 
 void TicketMgr::AddTicket(GmTicket* ticket)
@@ -445,24 +463,24 @@ void TicketMgr::ShowEscalatedList(ChatHandler& handler) const
             handler.PSendSysMessage(LANG_COMMAND_TICKETESCALATED_TICKET, itr.second->FormatMessageString(handler).c_str(), itr.second->GetNeededSecurityLevel());
 }
 
-void TicketMgr::SendTicket(WorldSession* session, GmTicket* ticket) const
+void TicketMgr::SendTicket(WorldSession* session, GmTicket const* ticket) const
 {
-    WorldPacket data(SMSG_GMTICKET_GETTICKET, (ticket ? (4 + 4 + 1 + 4 + 4 + 4 + 1 + 1) : 4));
+    auto packetData = std::make_unique<WorldPackets::GmTicket::GmTicketGetTicket>();
 
     if (ticket)
-        ticket->WritePacket(data);
+        ticket->FillPacket(*packetData);
     else
-        data << uint32(GMTICKET_STATUS_DEFAULT);
+        packetData->status = GMTICKET_STATUS_DEFAULT;
 
-    session->SendPacket(&data);
+    session->SendPacket(std::move(packetData));
 }
 
-void TicketMgr::ReloadTicketCallback(QueryResult* holder)
+void TicketMgr::ReloadTicketCallback(std::unique_ptr<QueryResult> result)
 {
-    if (!holder)
+    if (!result)
         return;
     GmTicket* newTicket = new GmTicket();
-    newTicket->LoadFromDB(holder->Fetch());
+    newTicket->LoadFromDB(result->Fetch());
     GmTicket* currentTicket = GetTicket(newTicket->GetId());
     if (!currentTicket)
     {
@@ -489,7 +507,6 @@ void TicketMgr::ReloadTicketCallback(QueryResult* holder)
             sWorld.SendGMTicketText(msg.c_str());
         }
     }
-    delete holder;
 }
 
 void TicketMgr::ReloadTicket(uint32 ticketId)

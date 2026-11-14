@@ -47,9 +47,6 @@ bool GuardEventAI::IsAttackingPlayerOrFriendly(Unit const* pWho) const
 
 void GuardEventAI::MoveInLineOfSight(Unit* pWho)
 {
-    if (!pWho)
-        return;
-
     if (m_creature->GetVictim())
         return;
 
@@ -73,7 +70,7 @@ void GuardEventAI::MoveInLineOfSight(Unit* pWho)
                 attackRadius = 30.0f;
     }
 
-    if (!m_creature->IsWithinDistInMap(pWho, attackRadius, true, false))
+    if (!m_creature->IsWithinDistInMap(pWho, attackRadius, true, SizeFactor::None))
         return;
 
     if (m_creature->CanInitiateAttack() && m_creature->IsValidAttackTarget(pWho) &&
@@ -82,10 +79,4 @@ void GuardEventAI::MoveInLineOfSight(Unit* pWho)
     {
         AttackStart(pWho);
     }
-}
-
-void GuardEventAI::EnterCombat(Unit* pWho)
-{
-    CreatureEventAI::EnterCombat(pWho);
-    m_creature->CallForHelp(30.0f);
 }

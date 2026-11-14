@@ -27,7 +27,7 @@
 
 #include "MovementGenerator.h"
 #include "WaypointManager.h"
-
+#include "CreatureGroups.h"
 #include "Player.h"
 
 #include <vector>
@@ -35,8 +35,6 @@
 
 #define FLIGHT_TRAVEL_UPDATE  100
 #define STOP_TIME_FOR_PLAYER  (30 * IN_MILLISECONDS)
-
-struct CreatureGroupMember;
 
 template<class T, class P>
 class PathMovementBase
@@ -71,7 +69,7 @@ class WaypointMovementGenerator<Creature>
 {
     public:
         WaypointMovementGenerator(Creature &, bool repeating = true) : i_nextMoveTime(0), m_isArrivalDone(false), m_repeating(repeating), m_isWandering(false), m_lastReachedWaypoint(0) {}
-        ~WaypointMovementGenerator() { i_path = nullptr; }
+        ~WaypointMovementGenerator() override { i_path = nullptr; }
         void Initialize(Creature &u);
         void Interrupt(Creature &);
         void Finalize(Creature &);
@@ -79,7 +77,7 @@ class WaypointMovementGenerator<Creature>
         bool Update(Creature &u, uint32 const& diff);
         void InitializeWaypointPath(Creature& creature, uint32 startPoint, WaypointPathOrigin wpSource, uint32 initialDelay, uint32 overwriteGuid, uint32 overwriteEntry, bool repeat);
 
-        MovementGeneratorType GetMovementGeneratorType() const { return WAYPOINT_MOTION_TYPE; }
+        MovementGeneratorType GetMovementGeneratorType() const override { return WAYPOINT_MOTION_TYPE; }
 
         // now path movement implementation
         bool GetResetPosition(Creature&, float& x, float& y, float& z);
@@ -93,7 +91,7 @@ class WaypointMovementGenerator<Creature>
             if (i_nextMoveTime.GetExpiry() < waitTimeDiff)
                 i_nextMoveTime.Reset(waitTimeDiff);
         }
-        
+
     protected:
         void LoadPath(uint32 guid, uint32 entry, WaypointPathOrigin wpOrigin);
         void Stop(int32 time) { i_nextMoveTime.Reset(time);}
@@ -142,7 +140,7 @@ class FlightPathMovementGenerator
         void Interrupt(Player &);
         void Reset(Player &, float modSpeed = 1.0f);
         bool Update(Player &, uint32 const&);
-        MovementGeneratorType GetMovementGeneratorType() const { return FLIGHT_MOTION_TYPE; }
+        MovementGeneratorType GetMovementGeneratorType() const override { return FLIGHT_MOTION_TYPE; }
 
         TaxiPathNodeList const& GetPath() { return *i_path; }
         uint32 GetPathAtMapEnd() const;
@@ -158,7 +156,7 @@ class PatrolMovementGenerator
 {
     public:
         explicit PatrolMovementGenerator(Creature& c) { ASSERT(InitPatrol(c)); }
-        explicit PatrolMovementGenerator(ObjectGuid leader, CreatureGroupMember const* member) : _leaderGuid(leader), _groupMember(member) {}
+        explicit PatrolMovementGenerator(ObjectGuid leader, CreatureGroupMember const* member) : m_leaderGuid(leader), m_groupMember(*member) {}
         bool InitPatrol(Creature& c);
 
         void LoadPath(Creature &c);
@@ -168,12 +166,12 @@ class PatrolMovementGenerator
         void Reset(Creature &);
         bool Update(Creature &, uint32 const&);
         void StartMove(Creature&);
-        MovementGeneratorType GetMovementGeneratorType() const { return PATROL_MOTION_TYPE; }
+        MovementGeneratorType GetMovementGeneratorType() const override { return PATROL_MOTION_TYPE; }
 
         bool GetResetPosition(Creature&, float& x, float& y, float& z);
     private:
-        ObjectGuid _leaderGuid;
-        CreatureGroupMember const* _groupMember;
+        ObjectGuid m_leaderGuid;
+        CreatureGroupMember m_groupMember;
 };
 
 #endif

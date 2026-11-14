@@ -13,6 +13,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
+#include "Packets/Misc.h"
 
 #include <fstream>
 
@@ -31,10 +32,10 @@ HonorStandingList& HonorMaintenancer::GetStandingListByTeam(Team team)
     }
 }
 
-float HonorMaintenancer::GetStandingCPByPosition(HonorStandingList& standingList, uint32 position)
+float HonorMaintenancer::GetStandingCPByPosition(HonorStandingList const& standingList, uint32 position)
 {
     uint32 pos = 1;
-    for (auto& standing : standingList)
+    for (auto const& standing : standingList)
     {
         if (pos == position)
             return standing.cp;
@@ -79,7 +80,7 @@ void HonorMaintenancer::LoadWeeklyScores()
         "  SELECT `guid` AS `guid`, 0 AS `hk`, 0 AS `dk`, 0 AS `cp` FROM `characters` WHERE `honor_rank_points` > 0"
         ") AS `scores` INNER JOIN `characters` AS `c` ON `scores`.`guid` = `c`.`guid` GROUP BY `guid` ORDER BY `guid` ";
 
-    QueryResult* result = CharacterDatabase.Query(query.str().c_str());
+    std::unique_ptr<QueryResult> result = CharacterDatabase.Query(query.str().c_str());
 
     if (result)
     {
@@ -97,7 +98,6 @@ void HonorMaintenancer::LoadWeeklyScores()
             m_weeklyScores[fields[0].GetUInt32()] = score;
         }
         while (result->NextRow());
-        delete result;
     }
 }
 
@@ -130,7 +130,7 @@ void HonorMaintenancer::LoadStandingLists()
     std::sort(m_allianceStandingList.begin(), m_allianceStandingList.end());
     std::sort(m_hordeStandingList.begin(), m_hordeStandingList.end());
 
-    sLog.outHonor("[MAINTENANCE] Alliance: %u, Horde: %u, Inactive: %u",
+    sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Alliance: %u, Horde: %u, Inactive: %u",
         m_allianceStandingList.size(), m_hordeStandingList.size(), m_inactiveStandingList.size());
 }
 
@@ -184,6 +184,14 @@ void HonorMaintenancer::InactiveDecayRankPoints()
 
 void HonorMaintenancer::SetCityRanks()
 {
+    // A direct transaction is needed to keep the clear-and-reassign sequence
+    // ordered if CharacterDatabase.WorkerThreads is > 1
+    if (!CharacterDatabase.BeginTransaction())
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "HonorMaintenancer::SetCityRanks: failed to start transaction.");
+        return;
+    }
+
     CharacterDatabase.Execute("UPDATE `characters` SET `extra_flags` = `extra_flags` & ~0x0400");
 
     std::map<uint8, std::pair<uint32, uint32>> highestStandingInRace =
@@ -200,7 +208,7 @@ void HonorMaintenancer::SetCityRanks()
 
     for (uint8 i = 1; i < MAX_RACES; ++i)
     {
-        QueryResult* result = CharacterDatabase.PQuery("SELECT `guid`, `honor_standing` FROM `characters` WHERE `honor_standing` > 0 and `race` = %u ORDER BY `honor_standing` ASC LIMIT 1", i);
+        std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery("SELECT `guid`, `honor_standing` FROM `characters` WHERE `honor_standing` > 0 and `race` = %u ORDER BY `honor_standing` ASC LIMIT 1", i);
 
         if (result)
         {
@@ -213,7 +221,6 @@ void HonorMaintenancer::SetCityRanks()
                 highestStandingInRace[i] = std::make_pair(guid, honorStanding);
             }
             while (result->NextRow());
-            delete result;
         }
     }
 
@@ -224,12 +231,16 @@ void HonorMaintenancer::SetCityRanks()
         if (lowGuid > 0)
             CharacterDatabase.PExecute("UPDATE `characters` SET `extra_flags` = `extra_flags` | 0x0400 WHERE `guid` = %u", standing.second.first);
     }
+
+    CharacterDatabase.CommitTransactionDirect();
 }
 
 void HonorMaintenancer::FlushRankPoints()
 {
-    // Imediatly reset honor standing before flushing
-    CharacterDatabase.Execute("UPDATE `characters` SET `honor_standing` = 0 WHERE `honor_standing` > 0");
+    // Use DirectExecute/DirectPExecute so data is committed before the next
+    // maintenance period reads it back (when processing multiple outstanding
+    // periods)
+    CharacterDatabase.DirectExecute("UPDATE `characters` SET `honor_standing` = 0 WHERE `honor_standing` > 0");
 
     for (auto& pair : m_weeklyScores)
     {
@@ -244,7 +255,7 @@ void HonorMaintenancer::FlushRankPoints()
         if (currentRank.visualRank > 0 && (currentRank.visualRank > highestRank.visualRank))
             highestRank = currentRank;
 
-        CharacterDatabase.PExecute("UPDATE `characters` SET `honor_highest_rank` = %u, `honor_rank_points` = %.1f, `honor_standing` = %u, "
+        CharacterDatabase.DirectPExecute("UPDATE `characters` SET `honor_highest_rank` = %u, `honor_rank_points` = %.1f, `honor_standing` = %u, "
             "`honor_last_week_hk` = %u, `honor_stored_hk` = (`honor_stored_hk` + %u), `honor_stored_dk` = (`honor_stored_dk` + %u), `honor_last_week_cp` = %.1f WHERE `guid` = %u",
             highestRank.rank,
             finiteAlways(weeklyScore.newRp), weeklyScore.standing,
@@ -253,7 +264,7 @@ void HonorMaintenancer::FlushRankPoints()
     }
 
     // Not includes weekend day, for correct view in honor tab for group "Yesterday"
-    CharacterDatabase.PExecute("DELETE FROM `character_honor_cp` WHERE `date` < %u", GetWeekEndDay());
+    CharacterDatabase.DirectPExecute("DELETE FROM `character_honor_cp` WHERE `date` < %u", GetWeekEndDay());
 }
 
 void HonorMaintenancer::DoMaintenance()
@@ -261,39 +272,62 @@ void HonorMaintenancer::DoMaintenance()
     if (!m_markerToStart)
         return;
 
-    sLog.outHonor("[MAINTENANCE] Honor maintenance starting.");
-
-    sLog.outHonor("[MAINTENANCE] Load weekly players scores.");
-    LoadWeeklyScores();
-    sLog.outHonor("[MAINTENANCE] Load standing lists.");
-    LoadStandingLists();
-    sLog.outHonor("[MAINTENANCE] Distribute rank points for Alliance.");
-    DistributeRankPoints(ALLIANCE);
-    sLog.outHonor("[MAINTENANCE] Distribute rank points for Horde.");
-    DistributeRankPoints(HORDE);
-    sLog.outHonor("[MAINTENANCE] Decay rank points for inactive players.");
-    InactiveDecayRankPoints();
-
-    if (sWorld.getConfig(CONFIG_BOOL_ENABLE_CITY_PROTECTOR))
+    // Process all outstanding maintenance periods in a single run, so the
+    // server doesn't need multiple restarts to catch up
+    uint32 const totalPeriods = (sWorld.GetGameDay() - m_nextMaintenanceDay) / 7 + 1;
+    uint32 periodsProcessed = 0;
+    while (m_markerToStart)
     {
-        sLog.outHonor("[MAINTENANCE] Assign city titles.");
-        SetCityRanks();
+        ++periodsProcessed;
+
+        // Clear data from any previous iteration
+        m_weeklyScores.clear();
+        m_allianceStandingList.clear();
+        m_hordeStandingList.clear();
+        m_inactiveStandingList.clear();
+
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Honor maintenance starting (period %u/%u).",
+            periodsProcessed, totalPeriods);
+
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Load weekly players scores.");
+        LoadWeeklyScores();
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Load standing lists.");
+        LoadStandingLists();
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Distribute rank points for Alliance.");
+        DistributeRankPoints(ALLIANCE);
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Distribute rank points for Horde.");
+        DistributeRankPoints(HORDE);
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Decay rank points for inactive players.");
+        InactiveDecayRankPoints();
+
+        if (sWorld.getConfig(CONFIG_BOOL_ENABLE_CITY_PROTECTOR))
+        {
+            sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Assign city titles.");
+            SetCityRanks();
+        }
+
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Flush rank points.");
+        FlushRankPoints();
+
+        CreateCalculationReport();
+
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Honor maintenance finished (period %u/%u).", periodsProcessed, totalPeriods);
+
+        ToggleMaintenanceMarker();
+        SetMaintenanceDays(GetNextMaintenanceDay());
+
+        // Check if there are more outstanding periods to process
+        if (sWorld.GetGameDay() >= m_nextMaintenanceDay)
+            ToggleMaintenanceMarker(); // Set marker back to true for next iteration
     }
 
-    sLog.outHonor("[MAINTENANCE] Flush rank points.");
-    FlushRankPoints();
-
-    CreateCalculationReport();
-
-    sLog.outHonor("[MAINTENANCE] Honor maintenance finished.");
-
-    ToggleMaintenanceMarker();
-    SetMaintenanceDays(GetNextMaintenanceDay());
+    if (periodsProcessed > 1)
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[MAINTENANCE] Processed %u outstanding honor maintenance periods.", periodsProcessed);
 }
 
 void HonorMaintenancer::CreateCalculationReport()
 {
-    std::string timestamp = Log::GetTimestampStr();
+    std::string timestamp = sLog.GetTimestampStr();
     std::string filename = "HCR_" + timestamp + ".txt";
     std::string path = sWorld.GetHonorPath() + filename;
 
@@ -301,7 +335,7 @@ void HonorMaintenancer::CreateCalculationReport()
     ofs.open(path.c_str());
     if (!ofs.is_open())
     {
-        sLog.outError("Can't create HCR file!");
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Can't create HCR file!");
         return;
     }
 
@@ -474,9 +508,11 @@ HonorScores HonorMaintenancer::GenerateScores(HonorStandingList& standingList)
         sc.BRK[0] = 1.000f;
     }
 
+    uint32 poolSize = sWorld.getConfig(CONFIG_UINT32_PVP_POOL_SIZE_PER_FACTION) == 0 ?
+            standingList.size() : sWorld.getConfig(CONFIG_UINT32_PVP_POOL_SIZE_PER_FACTION);
     // get the WS scores at the top of each break point
     for (float & group : sc.BRK)
-        group = floor((group * standingList.size()) + 0.5f);
+        group = floor((group * poolSize) + 0.5f);
 
     // initialize RP array
     // set the low point
@@ -547,7 +583,9 @@ float HonorMaintenancer::CalculateRpEarning(float cp, HonorScores sc)
 
 float HonorMaintenancer::CalculateRpDecay(float rpEarning, float rp)
 {
-    float decay = floor((0.2f * rp) + 0.5f);
+    float decayMultiplier = sWorld.getConfig(CONFIG_FLOAT_RP_DECAY);
+
+    float decay = floor((decayMultiplier * rp) + 0.5f);
     float delta = rpEarning - decay;
 
     if (delta < 0)
@@ -580,20 +618,24 @@ void HonorMaintenancer::CheckMaintenanceDay()
 {
     if (sWorld.GetGameDay() >= m_nextMaintenanceDay && !m_markerToStart)
     {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "HonorMaintenancer: Server needs to be restarted to perform honor rank calculations.");
+
         // Restart 15 minutes after honor weekend by server time
         if (sWorld.getConfig(CONFIG_BOOL_AUTO_HONOR_RESTART))
-            sWorld.ShutdownServ(900, SHUTDOWN_MASK_RESTART, SHUTDOWN_EXIT_CODE);
-        else
-            sLog.outString("HonorMaintenancer: Server needs to be restarted to perform honor rank calculations.");
+            sWorld.ShutdownServ(900, SHUTDOWN_MASK_RESTART, RESTART_EXIT_CODE);
 
         ToggleMaintenanceMarker();
+
+        // Schedule character database cleanup too.
+        if (sWorld.getConfig(CONFIG_UINT32_CHARDB_CLEANUP_FLAGS))
+            CharacterDatabase.DirectPExecute("UPDATE `saved_variables` SET `cleaning_flags` = (`cleaning_flags` | %u)", sWorld.getConfig(CONFIG_UINT32_CHARDB_CLEANUP_FLAGS));
     }
 }
 
 void HonorMaintenancer::ToggleMaintenanceMarker()
 {
     m_markerToStart = !m_markerToStart;
-    CharacterDatabase.PExecute("INSERT INTO `saved_variables` (`key`, `honor_maintenance_marker`) VALUES (0, %u) "
+    CharacterDatabase.DirectPExecute("INSERT INTO `saved_variables` (`key`, `honor_maintenance_marker`) VALUES (0, %u) "
         "ON DUPLICATE KEY UPDATE `honor_maintenance_marker` = %u", m_markerToStart, m_markerToStart);
 }
 
@@ -604,23 +646,22 @@ void HonorMaintenancer::SetMaintenanceDays(uint32 last, uint32 next)
     if (!next)
         m_nextMaintenanceDay = m_lastMaintenanceDay + 7;
 
-    CharacterDatabase.PExecute("INSERT INTO `saved_variables` (`key`, `honor_last_maintenance_day`, `honor_next_maintenance_day`) VALUES (0, %u, %u) "
+    CharacterDatabase.DirectPExecute("INSERT INTO `saved_variables` (`key`, `honor_last_maintenance_day`, `honor_next_maintenance_day`) VALUES (0, %u, %u) "
         "ON DUPLICATE KEY UPDATE `honor_last_maintenance_day` = %u, `honor_next_maintenance_day` = %u",
         m_lastMaintenanceDay, m_nextMaintenanceDay, m_lastMaintenanceDay, m_nextMaintenanceDay);
 }
 
 void HonorMaintenancer::Initialize()
 {
-    sLog.outString("Initialize Honor Maintenance system...");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Initialize Honor Maintenance system...");
 
-    QueryResult* result = CharacterDatabase.Query("SELECT `honor_last_maintenance_day`, `honor_next_maintenance_day`, `honor_maintenance_marker` FROM `saved_variables`");
+    std::unique_ptr<QueryResult> result = CharacterDatabase.Query("SELECT `honor_last_maintenance_day`, `honor_next_maintenance_day`, `honor_maintenance_marker` FROM `saved_variables`");
     if (result)
     {
         Field* fields = result->Fetch();
         m_lastMaintenanceDay = fields[0].GetUInt32();
         m_nextMaintenanceDay = fields[1].GetUInt32();
         m_markerToStart = fields[2].GetBool();
-        delete result;
     }
 
     if (!m_lastMaintenanceDay)
@@ -722,7 +763,7 @@ void HonorMgr::SaveStoredData()
             finiteAlways(m_lastWeekCP), m_storedHK, m_storedDK, m_owner->GetGUIDLow());
 }
 
-void HonorMgr::Load(QueryResult* result)
+void HonorMgr::Load(std::unique_ptr<QueryResult> result)
 {
     if (result)
     {
@@ -748,14 +789,14 @@ void HonorMgr::Load(QueryResult* result)
     }
 }
 
-bool HonorMgr::Add(float cp, uint8 type, Unit* source)
+bool HonorMgr::Add(float cp, uint8 type, Unit const* source)
 {
     // Prevent give fake records to db with 0 honor
     if (!cp || !m_owner)
         return false;
 
     // If not source, then give yourself
-    Unit* realSource = source;
+    Unit const* realSource = source;
     if (!source)
         source = m_owner;
 
@@ -771,16 +812,16 @@ bool HonorMgr::Add(float cp, uint8 type, Unit* source)
 
     // get IP if source is player
     std::string ip;
-    if (Player* victim = source->ToPlayer())
+    if (Player const* victim = source->ToPlayer())
         ip = victim->GetSession()->GetRemoteAddress();
 
     bool plr = source->GetTypeId() == TYPEID_PLAYER;
 
     if (m_owner->GetMap()->IsBattleGround())
-        sLog.outHonor("[BATTLEGROUND]: Player %s (account: %u) got %f honor for type %u, source %s %s (IP: %s)",
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[BATTLEGROUND]: Player %s (account: %u) got %f honor for type %u, source %s %s (IP: %s)",
             m_owner->GetSession()->GetPlayerName(), m_owner->GetSession()->GetAccountId(), honor, type, plr ? "player" : "unit", source->GetName(), ip.c_str());
     else
-        sLog.outHonor("[OPEN WORLD]: Player %s (account: %u) got %f honor for type %u, source %s %s (IP: %s)",
+        sLog.Out(LOG_HONOR, LOG_LVL_BASIC, "[OPEN WORLD]: Player %s (account: %u) got %f honor for type %u, source %s %s (IP: %s)",
             m_owner->GetSession()->GetPlayerName(), m_owner->GetSession()->GetAccountId(), honor, type, plr ? "player" : "unit", source->GetName(), ip.c_str());
 
     if (type == DISHONORABLE)
@@ -858,15 +899,19 @@ void HonorMgr::Update()
         SetHighestRank(m_rank);
 
     // HIGHEST RANK
-    m_owner->SetByteValue(PLAYER_FIELD_BYTES, 3, m_highestRank.rank);
+    m_owner->SetByteValue(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_HIGHEST_HONOR_RANK, m_highestRank.rank);
     // RANK (Patent)
-    m_owner->SetByteValue(PLAYER_BYTES_3, 3, m_rank.rank);
+    m_owner->SetByteValue(PLAYER_BYTES_3, PLAYER_BYTES_3_OFFSET_HONOR_RANK, m_rank.rank);
 
+// World of Warcraft Client Patch 1.6.0 (2005-07-12)
+// - There is now a progress bar on the Honor tab of your character window that displays how close you are to your next rank.
+#if SUPPORTED_CLIENT_BUILD >= CLIENT_BUILD_1_6_1
     uint32 honorBar = uint32(m_rankPoints >= 0.0f ? m_rankPoints : -1 * m_rankPoints);
     honorBar = uint8(((honorBar - m_rank.minRP) / (m_rank.maxRP - m_rank.minRP)) * (m_rank.positive ? 255 : -255));
 
     // PLAYER_FIELD_HONOR_BAR
-    m_owner->SetByteValue(PLAYER_FIELD_BYTES2, 0, honorBar);
+    m_owner->SetByteValue(PLAYER_FIELD_BYTES2, PLAYER_FIELD_BYTES_2_OFFSET_HONOR_RANK_BAR, honorBar);
+#endif
 
     // TODAY
     m_owner->SetUInt16Value(PLAYER_FIELD_SESSION_KILLS, 0, todayHK);
@@ -876,9 +921,13 @@ void HonorMgr::Update()
     m_owner->SetUInt32Value(PLAYER_FIELD_YESTERDAY_KILLS, yesterdayKills);
     m_owner->SetUInt32Value(PLAYER_FIELD_YESTERDAY_CONTRIBUTION, uint32(yesterdayCP > 0.0f ? yesterdayCP : 0.0f));
 
+// World of Warcraft Client Patch 1.6.0 (2005-07-12)
+// - There is a new "This Week" section of the Honor tab, which will display PvP accomplishments of the current week.
+#if SUPPORTED_CLIENT_BUILD >= CLIENT_BUILD_1_6_1
     // THIS WEEK
     m_owner->SetUInt32Value(PLAYER_FIELD_THIS_WEEK_KILLS, thisWeekKills);
     m_owner->SetUInt32Value(PLAYER_FIELD_THIS_WEEK_CONTRIBUTION, uint32(thisWeekCP > 0.0f ? thisWeekCP : 0.0f));
+#endif
 
     // LAST WEEK
     m_owner->SetUInt32Value(PLAYER_FIELD_LAST_WEEK_KILLS, m_lastWeekHK);
@@ -1013,33 +1062,36 @@ float HonorMgr::HonorableKillPoints(Player* killer, Player* victim, uint32 group
     return MaNGOS::Honor::GetHonorGain(killerLevel, victimLevel, victimRank, totalKills, groupSize);
 }
 
-void HonorMgr::SendPVPCredit(Unit* victim, float honor)
+void HonorMgr::SendPVPCredit(Unit const* victim, float honor)
 {
     if (!m_owner)
         return;
 
-    WorldPacket data(SMSG_PVP_CREDIT, 4 + 8 + 4);
-    data << int32(honor);
+    auto packet = std::make_unique<WorldPackets::Misc::PvpCredit>();
+    packet->honor = static_cast<int32>(honor);
 
-    if (!victim)
+    if (victim)
     {
-        data << int64(0);
-        data << int32(0);
-    }
-    else
-    {
-        data << victim->GetObjectGuid();
+        packet->victimGuid = victim->GetObjectGuid();
 
-        if (victim->GetTypeId() == TYPEID_UNIT)
+        if (victim->IsCreature())
         {
-            if (((Creature*)victim)->IsRacialLeader())
-                data << int32(19);
-            else
-                data << int32(0);
+            if (victim->ToCreature()->IsRacialLeader())
+                packet->victimRank = 19;
         }
-        else if (victim->GetTypeId() == TYPEID_PLAYER)
-            data << uint32(((Player*)victim)->GetHonorMgr().GetRank().rank);
+        else if (victim->IsPlayer())
+        {
+            // Never display just "HK:" without rank name.
+            // When killing a player with no rank,
+            // we need to send first rank instead.
+            // https://youtu.be/hef06Cs6Q34?t=191
+            // New classic client does this on its own.
+            int32 rank = victim->ToPlayer()->GetHonorMgr().GetRank().rank;
+            if (!rank)
+                rank = (HONOR_RANK_COUNT - POSITIVE_HONOR_RANK_COUNT) + 1; // At least "Scout"
+            packet->victimRank = rank;
+        }
     }
 
-    m_owner->SendDirectMessage(&data);
+    m_owner->GetSession()->SendPacket(std::move(packet));
 }

@@ -59,7 +59,7 @@ void Bag::RemoveFromWorld()
 
 bool Bag::Create(uint32 guidlow, uint32 itemid, ObjectGuid ownerGuid)
 {
-    ItemPrototype const* itemProto = ObjectMgr::GetItemPrototype(itemid);
+    ItemPrototype const* itemProto = sObjectMgr.GetItemPrototype(itemid);
 
     if (!itemProto || itemProto->ContainerSlots > MAX_BAG_SIZE)
         return false;
@@ -134,7 +134,7 @@ uint32 Bag::GetFreeSlots() const
     return slots;
 }
 
-void Bag::RemoveItem(uint8 slot, bool /*update*/)
+void Bag::RemoveItem(uint8 slot)
 {
     MANGOS_ASSERT(slot < MAX_BAG_SIZE);
 
@@ -145,7 +145,7 @@ void Bag::RemoveItem(uint8 slot, bool /*update*/)
     SetGuidValue(CONTAINER_FIELD_SLOT_1 + (slot * 2), ObjectGuid());
 }
 
-void Bag::StoreItem(uint8 slot, Item* pItem, bool /*update*/)
+void Bag::StoreItem(uint8 slot, Item* pItem)
 {
     MANGOS_ASSERT(slot < MAX_BAG_SIZE);
 
@@ -188,7 +188,7 @@ Item* Bag::GetItemByEntry(uint32 item) const
     return nullptr;
 }
 
-uint32 Bag::GetItemCount(uint32 item, Item* eItem) const
+uint32 Bag::GetItemCount(uint32 item, Item const* eItem) const
 {
     uint32 count = 0;
 
@@ -203,7 +203,7 @@ uint32 Bag::GetItemCount(uint32 item, Item* eItem) const
 uint8 Bag::GetSlotByItemGUID(ObjectGuid guid) const
 {
     for (uint32 i = 0; i < GetBagSize(); ++i)
-        if (m_bagslot[i] != 0)
+        if (m_bagslot[i] != nullptr)
             if (m_bagslot[i]->GetObjectGuid() == guid)
                 return i;
 

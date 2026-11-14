@@ -1,8 +1,13 @@
 #include "SpellEntry.h"
+
+#include "ScriptMgr.h"
 #include "SharedDefines.h"
 #include "SpellAuraDefines.h"
 #include "SpellMgr.h"
 #include "Spell.h"
+#include "ScriptMgr.h"
+#include "TradeData.h"
+#include "ItemPrototype.h"
 
 using namespace Spells;
 
@@ -54,7 +59,7 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
             else
             {
                 // Well Fed buffs (must be exclusive with Food / Drink replenishment effects, or else Well Fed will cause them to be removed)
-                if (spellInfo->AttributesEx2 & SPELL_ATTR_EX2_FOOD_BUFF)
+                if (spellInfo->AttributesEx2 & SPELL_ATTR_EX2_RETAIN_ITEM_CAST)
                     return SPELL_WELL_FED;
             }
             break;
@@ -62,7 +67,7 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
         case SPELLFAMILY_MAGE:
         {
             // family flags 18(Molten), 25(Frost/Ice), 28(Mage)
-            if (spellInfo->SpellFamilyFlags & UI64LIT(0x12000000))
+            if (spellInfo->SpellFamilyFlags & uint64(0x12000000))
                 return SPELL_MAGE_ARMOR;
 
             if (spellInfo->EffectApplyAuraName[EFFECT_INDEX_0] == SPELL_AURA_MOD_CONFUSE && spellInfo->PreventionType == SPELL_PREVENTION_TYPE_SILENCE)
@@ -72,7 +77,7 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
         }
         case SPELLFAMILY_WARRIOR:
         {
-            if (spellInfo->SpellFamilyFlags & UI64LIT(0x00008000010000))
+            if (spellInfo->SpellFamilyFlags & uint64(0x00008000010000))
                 return SPELL_POSITIVE_SHOUT;
 
             break;
@@ -87,7 +92,7 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
         case SPELLFAMILY_PRIEST:
         {
             // "Well Fed" buff from Blessed Sunfruit, Blessed Sunfruit Juice, Alterac Spring Water
-            if ((spellInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_SITTING) &&
+            if ((spellInfo->Attributes & SPELL_ATTR_ALLOW_WHILE_SITTING) &&
                  spellInfo->HasSpellInterruptFlag(SPELL_INTERRUPT_FLAG_COMBAT) &&
                 (spellInfo->SpellIconID == 52 || spellInfo->SpellIconID == 79))
                 return SPELL_WELL_FED;
@@ -110,10 +115,10 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
             if (spellInfo->IsSealSpell())
                 return SPELL_SEAL;
 
-            if (spellInfo->IsFitToFamilyMask(UI64LIT(0x0000000010000100)))
+            if (spellInfo->IsFitToFamilyMask(uint64(0x0000000010000100)))
                 return SPELL_BLESSING;
 
-            if ((spellInfo->IsFitToFamilyMask(UI64LIT(0x0000000020180400))) && spellInfo->baseLevel != 0)
+            if ((spellInfo->IsFitToFamilyMask(uint64(0x0000000020180400))) && spellInfo->baseLevel != 0)
                 return SPELL_JUDGEMENT;
 
             // Old Judgement of Command
@@ -148,7 +153,7 @@ SpellSpecific Spells::GetSpellSpecific(uint32 spellId)
     if ((spellInfo->HasAura(SPELL_AURA_TRACK_CREATURES) ||
             spellInfo->HasAura(SPELL_AURA_TRACK_RESOURCES)  ||
             spellInfo->HasAura(SPELL_AURA_TRACK_STEALTHED)) &&
-            ((spellInfo->AttributesEx & SPELL_ATTR_EX_NOT_RESET_AUTO_ACTIONS) || (spellInfo->Attributes & SPELL_ATTR_CASTABLE_WHILE_MOUNTED)))
+            ((spellInfo->AttributesEx & SPELL_ATTR_EX_NO_AUTOCAST_AI) || (spellInfo->Attributes & SPELL_ATTR_ALLOW_WHILE_MOUNTED)))
         return SPELL_TRACKER;
 
     // elixirs can have different families, but potion most ofc.
@@ -214,6 +219,14 @@ bool Spells::CompareSpellSpecificAuras(SpellEntry const* spellInfo_1, SpellEntry
     return false;
 }
 
+bool Spells::IsAutocastable(uint32 spellId)
+{
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    if (!spellInfo)
+        return false;
+    return spellInfo->IsAutocastable();
+}
+
 bool Spells::IsPassiveSpell(uint32 spellId)
 {
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
@@ -265,86 +278,6 @@ bool Spells::IsSingleTargetSpells(SpellEntry const* spellInfo1, SpellEntry const
     return false;
 }
 
-void SpellEntry::InitCachedValues()
-{
-    ComputeBinary();
-    ComputeDispel();
-    ComputeNonPeriodicDispel();
-}
-
-void SpellEntry::ComputeBinary()
-{
-    _isBinary = false;
-    // Les sorts non magiques ne sont pas concernes.
-    if (DmgClass != SPELL_DAMAGE_CLASS_MAGIC)
-        return;
-
-    // Pareil pour les sorts physiques (charges)
-    if (School == SPELL_SCHOOL_NORMAL)
-        return;
-
-    bool foundNoDamageAura   = false;
-    for (int eff = 0; eff < 3; ++eff)
-    {
-        // Micro opt - don't iterate anymore if we already have an aura
-        if (foundNoDamageAura)
-            break;
-        
-        switch (Effect[eff])
-        {
-            case SPELL_EFFECT_INTERRUPT_CAST:
-                foundNoDamageAura = true;
-                break;
-            case SPELL_EFFECT_APPLY_AURA:
-                switch (EffectApplyAuraName[eff])
-                {
-                    case SPELL_AURA_MOD_DECREASE_SPEED:
-                    case SPELL_AURA_MOD_FEAR:
-                    case SPELL_AURA_MOD_STUN:
-                    case SPELL_AURA_MOD_PACIFY:
-                    case SPELL_AURA_MOD_ROOT:
-                    case SPELL_AURA_MOD_SILENCE:
-                    case SPELL_AURA_MOD_DISARM:
-                    case SPELL_AURA_MOD_RESISTANCE:
-                    case SPELL_AURA_MOD_DAMAGE_TAKEN:
-                        foundNoDamageAura = true;
-                        break;
-                }
-                break;
-            case SPELL_EFFECT_KNOCK_BACK:
-                foundNoDamageAura = true;
-                break;
-        }
-    }
-    _isBinary = foundNoDamageAura;
-    if (Id == 26143) {              // SPELL_MIND_FLAY (C'Thuns Eye Tentacles)
-        _isBinary = true;
-    }
-    else if (Id == 26478) {
-        _isBinary = true;           // SPELL_GROUND_RUPTURE_NATURE (C'thuns Giant tentacles ground rupture)
-    }
-}
-
-void SpellEntry::ComputeNonPeriodicDispel()
-{
-    _isNonPeriodicDispel = true;
-    for (int i = 0; i < 3; ++i)
-        if (_isNonPeriodicDispel && Effect[i] != 0 && (Effect[i] != SPELL_EFFECT_DISPEL || EffectRadiusIndex[i] != 0))
-            _isNonPeriodicDispel = false;
-}
-
-void SpellEntry::ComputeDispel()
-{
-    _isDispel = false;
-    for (uint32 i : Effect)
-    {
-        if (i == SPELL_EFFECT_DISPEL)
-        {
-            _isDispel = true;
-            break;
-        }
-    }
-}
 DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
 {
     // Explicit Diminishing Groups
@@ -378,7 +311,7 @@ DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
                 return DIMINISHING_WARLOCK_FEAR;
 
             // World of Warcraft Client Patch 1.4.0 (2005-04-19)
-            // - Seduction (Succubus) - Is now considered a Fear effect for purposes 
+            // - Seduction (Succubus) - Is now considered a Fear effect for purposes
             //   of diminishing returns.
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_3_1
             // Seduction
@@ -400,7 +333,7 @@ DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
         case SPELLFAMILY_SHAMAN:
         {
             // World of Warcraft Client Patch 1.4.0 (2005-04-19)
-            // - Frost Shock - Now subject to diminishing returns in PvP. This is 
+            // - Frost Shock - Now subject to diminishing returns in PvP. This is
             //   considered a slowing effect.
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_3_1
             // Frost Shock
@@ -419,10 +352,10 @@ DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
         case SPELLFAMILY_GENERIC:
         {
             // World of Warcraft Client Patch 1.9.0 (2006-01-03)
-            // - Pyroclasm - The stun effect's duration no longer diminishes or is 
+            // - Pyroclasm - The stun effect's duration no longer diminishes or is
             //   diminished by controlled stun abilities and spells(e.g.Cheap Shot,
             //   Hammer of Justice, Charge, etc).
-            // - Impact - The stun effect's duration no longer diminishes or is 
+            // - Impact - The stun effect's duration no longer diminishes or is
             //   diminished by controlled stun abilities and spells(e.g.Cheap Shot,
             //   Hammer of Justice, Charge etc.).
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_8_4
@@ -434,7 +367,7 @@ DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
                 return DIMINISHING_TRIGGER_STUN;
 #endif
             // World of Warcraft Client Patch 1.8.0 (2005-10-11)
-            // - Gnomish Mind Control Cap - Is now subject to diminishing returns in 
+            // - Gnomish Mind Control Cap - Is now subject to diminishing returns in
             //   the Charm category.
 #if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_7_1
             // Gnomish Mind Control Cap
@@ -498,48 +431,12 @@ DiminishingGroup SpellEntry::GetDiminishingReturnsGroup(bool triggered) const
     return DIMINISHING_NONE;
 }
 
-bool SpellEntry::IsPvEHeartBeat() const
-{
-    if (!(Attributes & SPELL_ATTR_DIMINISHING_RETURNS))
-        return false;
-
-    for (uint32 i : EffectApplyAuraName)
-    {
-        switch (i)
-        {
-            case SPELL_AURA_MOD_FEAR:
-            case SPELL_AURA_MOD_ROOT:
-            case SPELL_AURA_MOD_PACIFY_SILENCE:
-            case SPELL_AURA_MOD_CONFUSE:
-                return false;
-        }
-    }
-
-    return true;
-}
-
-bool SpellEntry::IsCCSpell() const
-{
-    if (IsChanneledSpell())
-        return false;
-    if (HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
-        return false;
-
-    switch (GetDiminishingReturnsGroup(false))
-    {
-        case DIMINISHING_NONE:
-        case DIMINISHING_LIMITONLY:
-            return false;
-    }
-    return true;
-}
-
 WeaponAttackType SpellEntry::GetWeaponAttackType() const
 {
     switch (DmgClass)
     {
         case SPELL_DAMAGE_CLASS_MELEE:
-            if (HasAttribute(SPELL_ATTR_EX3_REQ_OFFHAND))
+            if (HasAttribute(SPELL_ATTR_EX3_REQUIRES_OFFHAND_WEAPON))
                 return OFF_ATTACK;
             else
                 return BASE_ATTACK;
@@ -549,7 +446,7 @@ WeaponAttackType SpellEntry::GetWeaponAttackType() const
             break;
         default:
             // Wands
-            if (HasAttribute(SPELL_ATTR_EX2_AUTOREPEAT_FLAG))
+            if (HasAttribute(SPELL_ATTR_EX2_AUTO_REPEAT))
                 return RANGED_ATTACK;
             else
                 return BASE_ATTACK;
@@ -557,12 +454,16 @@ WeaponAttackType SpellEntry::GetWeaponAttackType() const
     }
 }
 
-uint32 SpellEntry::GetCastTime(Spell* spell) const
+uint32 SpellEntry::GetCastTime(SpellCaster const* caster, Spell* spell) const
 {
     if (spell)
     {
         // some triggered spells have data only usable for client
         if (spell->IsTriggeredSpellWithRedundentData())
+            return 0;
+
+        // chance on hit procs should be instant
+        if (spell->IsTriggered() && spell->IsCastByItem())
             return 0;
 
         // spell targeted to non-trading trade slot item instant at trade success apply
@@ -579,7 +480,9 @@ uint32 SpellEntry::GetCastTime(Spell* spell) const
     if (!spellCastTimeEntry)
         return 0;
 
-    int32 castTime = spellCastTimeEntry->CastTime;
+    int32 spellRank = caster && caster->GetTypeId() != TYPEID_GAMEOBJECT ? static_cast<Unit const*>(caster)->GetSpellRank(this) : 0;
+    int32 castTime = spellCastTimeEntry->CastTime + spellCastTimeEntry->CastTimePerLevel * (spellRank / 5 - baseLevel);
+    castTime = std::max(castTime, spellCastTimeEntry->MinCastTime);
 
     if (spell)
     {
@@ -590,9 +493,9 @@ uint32 SpellEntry::GetCastTime(Spell* spell) const
                 if (Player* modOwner = pUnit->GetSpellModOwner())
                     modOwner->ApplySpellMod(Id, SPELLMOD_CASTING_TIME, castTime, spell);
 
-            if (!(Attributes & (SPELL_ATTR_IS_ABILITY | SPELL_ATTR_TRADESPELL)))
+            if (!(Attributes & (SPELL_ATTR_IS_ABILITY | SPELL_ATTR_IS_TRADESKILL)))
             {
-#if SUPPORTED_CLIENT_BUILD >= CLIENT_BUILD_1_12_1
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_11_2
                 castTime = int32(castTime * pUnit->GetFloatValue(UNIT_MOD_CAST_SPEED));
 #else
                 castTime = int32(castTime * (1.0f + pUnit->GetInt32Value(UNIT_MOD_CAST_SPEED) / 100.0f));
@@ -605,7 +508,7 @@ uint32 SpellEntry::GetCastTime(Spell* spell) const
         }
     }
 
-    if (Attributes & SPELL_ATTR_RANGED && (!spell || !spell->IsAutoRepeat()))
+    if (Attributes & SPELL_ATTR_USES_RANGED_SLOT && (!spell || !spell->IsAutoRepeat()))
         castTime += 500;
 
     return (castTime > 0) ? uint32(castTime) : 0;
@@ -613,7 +516,7 @@ uint32 SpellEntry::GetCastTime(Spell* spell) const
 
 uint32 SpellEntry::GetCastTimeForBonus(DamageEffectType damagetype) const
 {
-    uint32 CastingTime = !IsChanneledSpell() ? GetCastTime() : GetDuration();
+    uint32 CastingTime = !IsChanneledSpell() ? GetCastTime(nullptr) : GetDuration();
 
     if (CastingTime > 7000) CastingTime = 7000;
     if (CastingTime < 1500) CastingTime = 1500;
@@ -677,7 +580,7 @@ uint32 SpellEntry::GetCastTimeForBonus(DamageEffectType damagetype) const
     if (overTime > 0 && CastingTime > 0 && DirectDamage)
     {
         // mainly for DoTs which are 3500 here otherwise
-        uint32 OriginalCastTime = GetCastTime();
+        uint32 OriginalCastTime = GetCastTime(nullptr);
         if (OriginalCastTime > 7000) OriginalCastTime = 7000;
         if (OriginalCastTime < 1500) OriginalCastTime = 1500;
         // Portion to Over Time
@@ -742,29 +645,30 @@ float SpellEntry::CalculateCustomCoefficient(WorldObject const* caster, DamageEf
         case SPELLFAMILY_PALADIN:
         {
             // Seal of Righteousness
-            if (IsFitToFamilyMask(UI64LIT(0x0000000008000000)) && SpellIconID == 25)
+            if (IsFitToFamilyMask(uint64(0x0000000008000000)) && SpellIconID == 25)
             {
-                coeff = 0.092f;
+                coeff = 0.10f;
                 float speed = BASE_ATTACK_TIME;
 
                 if (caster->IsPlayer())
                 {
                     if (Item *item = ((Player*)caster)->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
                     {
-                        coeff = item->isOneHandedWeapon() ? 0.092f : 0.108f;
-                        speed = item->GetProto()->Delay;
+                        coeff = item->isOneHandedWeapon() ? 0.10f : 0.125f;
+
                     }
                 }
 
-                speed /= 1000.0f;
 
-                return speed * coeff;
+
+                return coeff;
             }
             // Seal of Command
             if (Id == 20424)
             {
                 return donePart ? 0.20f : 0.29f;
             }
+            break;
         }
         case SPELLFAMILY_SHAMAN:
         {
@@ -772,7 +676,7 @@ float SpellEntry::CalculateCustomCoefficient(WorldObject const* caster, DamageEf
                 return coeff;
 
             // Chain Lightning / Chain Heal / Healing Wave (T1 8/8 bonus)
-            if (IsFitToFamilyMask(UI64LIT(0x00000000142)))
+            if (IsFitToFamilyMask(uint64(0x00000000142)))
             {
                 float multiplier = DmgMultiplier[0];
 
@@ -792,6 +696,7 @@ float SpellEntry::CalculateCustomCoefficient(WorldObject const* caster, DamageEf
                     coeff *= multiplier;
                 return coeff;
             }
+            break;
         }
         default:
             break;
@@ -816,7 +721,7 @@ int32 SpellEntry::GetMaxDuration() const
     return (du->Duration[2] == -1) ? -1 : abs(du->Duration[2]);
 }
 
-int32 SpellEntry::CalculateDuration(WorldObject const* caster) const
+int32 SpellEntry::CalculateDuration(WorldObject const* caster, Unit const* target, AuraScript* auraScript) const
 {
     int32 duration = GetDuration();
 
@@ -827,6 +732,9 @@ int32 SpellEntry::CalculateDuration(WorldObject const* caster) const
         if (duration != maxduration)
             if (Player const* pPlayer = caster->ToPlayer())
                 duration += int32((maxduration - duration) * pPlayer->GetComboPoints() / 5);
+
+        if (auraScript)
+            duration = auraScript->OnDurationCalculate(caster, target, duration);
 
         if (Unit const* pUnit = caster->ToUnit())
         {
@@ -839,6 +747,8 @@ int32 SpellEntry::CalculateDuration(WorldObject const* caster) const
             }
         }
     }
+    else if (auraScript)
+        duration = auraScript->OnDurationCalculate(caster, target, duration);
 
     return duration;
 }
@@ -869,9 +779,22 @@ uint16 SpellEntry::GetAuraMaxTicks() const
     return 6;
 }
 
+uint32 SpellEntry::GetRank() const
+{
+    if (Rank[0].length() > 5 &&
+        Rank[0][0] == 'R' &&
+        Rank[0][1] == 'a' &&
+        Rank[0][2] == 'n' &&
+        Rank[0][3] == 'k' &&
+        Rank[0][4] == ' ')
+        return strtoul(Rank[0].c_str() + 5, NULL, 10);
+
+    return 0;
+}
+
 bool SpellEntry::IsPositiveSpell(WorldObject const* caster, WorldObject const* victim) const
 {
-    if (Attributes & SPELL_ATTR_NEGATIVE)
+    if (Attributes & SPELL_ATTR_AURA_IS_DEBUFF)
         return false;
     // spells with at least one negative effect are considered negative
     // some self-applied spells have negative effects but in self casting case negative check ignored.
@@ -927,9 +850,10 @@ bool SpellEntry::IsPositiveEffect(SpellEffectIndex effIndex, WorldObject const* 
                 {
                     if (CharmInfo const* charm = static_cast<Unit const*>(victim)->GetCharmInfo())
                         if (FactionTemplateEntry const* ft = charm->GetOriginalFactionTemplate())
-                            return ft->IsFriendlyTo(*caster->getFactionTemplateEntry());
+                            if (FactionTemplateEntry const* ft2 = caster->GetFactionTemplateEntry())
+                                return ft->IsFriendlyTo(*ft2);
                 }
-                
+
                 return caster->IsFriendlyTo(victim);
             }
         // non-positive aura use
@@ -1036,7 +960,7 @@ bool SpellEntry::IsPositiveEffect(SpellEffectIndex effIndex, WorldObject const* 
                             SpellFamilyName == SPELLFAMILY_GENERIC)
                         return false;
                     // but not this if this first effect (don't found better check)
-                    if (Attributes & 0x4000000 && effIndex == EFFECT_INDEX_0)
+                    if (Attributes & SPELL_ATTR_AURA_IS_DEBUFF && effIndex == EFFECT_INDEX_0)
                         return false;
                     break;
                 case SPELL_AURA_MOD_SCALE:
@@ -1091,7 +1015,7 @@ bool SpellEntry::IsPositiveEffect(SpellEffectIndex effIndex, WorldObject const* 
         return false;
 
     // Attributes check
-    if (Attributes & SPELL_ATTR_NEGATIVE)
+    if (Attributes & SPELL_ATTR_AURA_IS_DEBUFF)
         return false;
 
     // ok, positive
@@ -1101,7 +1025,7 @@ bool SpellEntry::IsPositiveEffect(SpellEffectIndex effIndex, WorldObject const* 
 bool SpellEntry::IsReflectableSpell(WorldObject const* caster, WorldObject const* victim) const
 {
     return DmgClass == SPELL_DAMAGE_CLASS_MAGIC && !HasAttribute(SPELL_ATTR_IS_ABILITY)
-        && !HasAttribute(SPELL_ATTR_EX_CANT_BE_REFLECTED) && !HasAttribute(SPELL_ATTR_UNAFFECTED_BY_INVULNERABILITY)
+        && !HasAttribute(SPELL_ATTR_EX_NO_REFLECTION) && !HasAttribute(SPELL_ATTR_NO_IMMUNITIES)
         && !HasAttribute(SPELL_ATTR_PASSIVE) && !IsPositiveSpell(caster, victim);
 }
 
@@ -1109,8 +1033,7 @@ SpellCastResult SpellEntry::GetErrorAtShapeshiftedCast(uint32 form) const
 {
     // talents that learn spells can have stance requirements that need ignore
     // (this requirement only for client-side stance show in talent description)
-    if (GetTalentSpellCost(Id) > 0 &&
-            (Effect[EFFECT_INDEX_0] == SPELL_EFFECT_LEARN_SPELL || Effect[EFFECT_INDEX_1] == SPELL_EFFECT_LEARN_SPELL || Effect[EFFECT_INDEX_2] == SPELL_EFFECT_LEARN_SPELL))
+    if (HasEffect(SPELL_EFFECT_LEARN_SPELL) && GetTalentSpellCost(Id) > 0)
         return SPELL_CAST_OK;
 
     uint32 stanceMask = (form ? 1 << (form - 1) : 0);
@@ -1127,10 +1050,10 @@ SpellCastResult SpellEntry::GetErrorAtShapeshiftedCast(uint32 form) const
         SpellShapeshiftFormEntry const* shapeInfo = sSpellShapeshiftFormStore.LookupEntry(form);
         if (!shapeInfo)
         {
-            sLog.outError("GetErrorAtShapeshiftedCast: unknown shapeshift %u", form);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "GetErrorAtShapeshiftedCast: unknown shapeshift %u", form);
             return SPELL_CAST_OK;
         }
-        actAsShifted = !(shapeInfo->flags1 & 1);            // shapeshift acts as normal form for spells
+        actAsShifted = !(shapeInfo->flags1 & SHAPESHIFT_FLAG_STANCE);            // shapeshift acts as normal form for spells
     }
 
     if (actAsShifted)
@@ -1143,7 +1066,7 @@ SpellCastResult SpellEntry::GetErrorAtShapeshiftedCast(uint32 form) const
     else
     {
         // needs shapeshift
-        if (!(AttributesEx2 & SPELL_ATTR_EX2_NOT_NEED_SHAPESHIFT) && Stances != 0)
+        if (!HasAttribute(SPELL_ATTR_EX2_ALLOW_WHILE_NOT_SHAPESHIFTED) && Stances != 0)
             return SPELL_FAILED_ONLY_SHAPESHIFT;
     }
 
@@ -1180,4 +1103,30 @@ bool SpellEntry::IsTargetInRange(WorldObject const* pCaster, WorldObject const* 
     float dist = pCaster->GetCombatDistance(pTarget);
 
     return dist < max_range && dist >= min_range;
+}
+
+bool SpellEntry::HasAuraOrTriggersAnotherSpellWithAura(AuraType aura) const
+{
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (EffectApplyAuraName[i] == aura)
+            return true;
+
+        if (Effect[i] == SPELL_EFFECT_TRIGGER_SPELL)
+            if (SpellEntry const* pTriggeredSpell = sSpellMgr.GetSpellEntry(EffectTriggerSpell[i]))
+                if (pTriggeredSpell->HasAura(aura))
+                    return true;
+    }
+    return false;
+}
+
+bool SpellEntry::CanTriggerWeaponProcs() const
+{
+    // All weapon based abilities can trigger weapon procs,
+    // even if they do no damage, or break on damage, like Sap.
+    // https://www.youtube.com/watch?v=klMsyF_Kz5o
+    if (EquippedItemClass == ITEM_CLASS_WEAPON && rangeIndex == SPELL_RANGE_IDX_COMBAT)
+        return true;
+
+    return HasAttribute(SPELL_CUSTOM_TRIGGER_WEAPON_PROCS);
 }

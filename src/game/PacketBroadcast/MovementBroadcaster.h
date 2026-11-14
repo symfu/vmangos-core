@@ -1,41 +1,28 @@
 #ifndef MANGOS_MOVEMENT_BROADCASTER_H
 #define MANGOS_MOVEMENT_BROADCASTER_H
 
-#include "Platform/Define.h"
-
 #include <atomic>
 #include <chrono>
+#include <shared_mutex>
+#include <thread>
 #include <vector>
 #include <cstddef>
 #include <memory>
-#include <thread>
-#include <functional>
 
 class PlayerBroadcaster;
-class MovementBroadcaster;
-
-class MovementBroadcasterWorker
-{
-public:
-    MovementBroadcasterWorker(int threadId, MovementBroadcaster* broadcaster) : m_threadId(threadId), m_broadcaster(broadcaster) {};
-    virtual void run();
-    int m_threadId;
-    MovementBroadcaster* m_broadcaster;
-};
 
 class MovementBroadcaster final
 {
-    friend class MovementBroadcasterWorker;
-    typedef std::set<std::shared_ptr<PlayerBroadcaster> > PlayersBCastSet;
+    typedef std::set<std::shared_ptr<PlayerBroadcaster>> PlayersBCastSet;
 
     std::size_t m_num_threads;
 
     std::atomic_bool m_stop;
-    std::vector<std::unique_ptr<std::thread, std::function<void(std::thread *)>>> m_threads;
+    std::vector<std::thread> m_threads;
     std::chrono::milliseconds m_sleep_timer;
 
     std::vector<PlayersBCastSet> m_thread_players;
-    std::vector<std::mutex> m_thread_locks;
+    std::vector<std::shared_timed_mutex> m_thread_locks;
 
     void Work(std::size_t thread_id);
     void BroadcastPackets(std::size_t index, uint32& num_packets);
